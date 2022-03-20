@@ -190,8 +190,6 @@ INSTALL_EMBEDDED_PROGS += \
 	$(BINDIR)/erlc@EXEEXT@ \
 	$(BINDIR)/escript@EXEEXT@ \
 	$(BINDIR)/ct_run@EXEEXT@ \
-	$(BINDIR)/run_erl@EXEEXT@ \
-	$(BINDIR)/to_erl@EXEEXT@ \
 	$(BINDIR)/dyn_erl@EXEEXT@ \
 	$(BINDIR)/erl_call@EXEEXT@
 INSTALL_EMBEDDED_DATA = $(UXETC)/start.src $(UXETC)/start_erl.src
@@ -251,12 +249,8 @@ endif
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/inet_gethost.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/rdate.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/reclaim.o
-	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/run_erl.o
-	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/to_erl.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/dyn_erl.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/safe_string.o
-	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/run_erl.o
-	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/to_erl.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/ct_run.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/vxcall.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erl.o
@@ -431,18 +425,6 @@ $(OBJDIR)/inet_gethost.o: inet_gethost.c $(RC_GENERATED)
 # inet_gethost
 $(BINDIR)/inet_gethost@EXEEXT@: $(OBJDIR)/inet_gethost.o $(ENTRY_OBJ) $(ERTS_LIB)
 	$(ld_verbose) $(LD) $(LDFLAGS) $(ENTRY_LDFLAGS) -o $@ $(OBJDIR)/inet_gethost.o $(ENTRY_OBJ) $(LIBS) $(ERTS_INTERNAL_LIBS)
-
-# run_erl
-$(BINDIR)/run_erl: $(OBJDIR)/safe_string.o $(OBJDIR)/run_erl.o
-	$(V_LD) $(LDFLAGS) -o $@ $(OBJDIR)/safe_string.o $(OBJDIR)/run_erl.o $(LIBS)
-$(OBJDIR)/run_erl.o: $(ETC)/run_erl.c $(RC_GENERATED)
-	$(V_CC) $(CFLAGS) -o $@ -c $(ETC)/run_erl.c
-
-# to_erl
-$(BINDIR)/to_erl: $(OBJDIR)/safe_string.o $(OBJDIR)/to_erl.o
-	$(V_LD) $(LDFLAGS) -o $@  $(OBJDIR)/safe_string.o $(OBJDIR)/to_erl.o
-$(OBJDIR)/to_erl.o: $(ETC)/to_erl.c $(RC_GENERATED)
-	$(V_CC) $(CFLAGS) -o $@ -c $(ETC)/to_erl.c
 
 # dyn_erl
 $(BINDIR)/dyn_erl: $(OBJDIR)/safe_string.o $(OBJDIR)/dyn_erl.o
