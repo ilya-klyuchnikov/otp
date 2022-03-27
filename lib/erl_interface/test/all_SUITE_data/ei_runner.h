@@ -23,7 +23,6 @@
 typedef void (*TestCase)(void);
 
 #define TESTCASE(name) void name(void)
-#define ASIZE(a) (sizeof(a)/sizeof(a[0]))
 
 void run_tests(char* argv0, TestCase cases[], unsigned number);
 

@@ -37,8 +37,6 @@
 #define NO 0
 #define YES 1
 
-#define ASIZE(a) (sizeof(a)/sizeof(a[0]))
-
 #ifndef PATH_MAX
 # define PATH_MAX 4096
 #endif

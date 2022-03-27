@@ -26,8 +26,6 @@
 #define NO 0
 #define YES 1
 
-#define ASIZE(a) (sizeof(a)/sizeof(a[0]))
-
 static int debug = 0;		/* Bit flags for debug printouts. */
 
 static char** eargv_base;	/* Base of vector. */

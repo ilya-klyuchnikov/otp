@@ -152,8 +152,6 @@ static char erts_system_version[] = ("Erlang/OTP " ERLANG_OTP_RELEASE
 #endif
 				     "\n");
 
-#define ASIZE(a) (sizeof(a)/sizeof(a[0]))
-
 #if defined(HAVE_SOLARIS_SPARC_PERFMON)
 # include <sys/ioccom.h>
 # define PERFMON_SETPCR			_IOW('P', 1, unsigned long long)
