@@ -25456,9 +25456,6 @@ ac_config_files="$ac_config_files emulator/$host/Makefile:emulator/Makefile.in e
 ac_config_files="$ac_config_files ../make/make_emakefile:../make/make_emakefile.in"
 
 
-ac_config_files="$ac_config_files ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in"
-
-
 ac_config_files="$ac_config_files ../make/install_dir_data.sh:../make/install_dir_data.sh.in"
 
 
