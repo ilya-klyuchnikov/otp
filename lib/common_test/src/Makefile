@@ -49,7 +49,6 @@ MODULES= \
 	ct_framework \
 	ct_ftp \
 	ct_ssh \
-	ct_snmp \
 	ct_gen_conn \
 	ct_rpc \
 	ct_run \
@@ -74,7 +73,6 @@ MODULES= \
         ct_hooks_lock\
 	cth_log_redirect\
 	cth_surefire \
-	ct_netconfc \
 	ct_conn_log_h \
 	cth_conn_log \
 	ct_groups \
