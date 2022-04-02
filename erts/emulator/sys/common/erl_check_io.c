@@ -60,11 +60,6 @@
 #define DEBUG_PRINT_FD(...)
 #endif
 
-#ifndef ERTS_SYS_CONTINOUS_FD_NUMBERS
-#  include "safe_hash.h"
-#  define DRV_EV_STATE_HTAB_SIZE 1024
-#endif
-
 typedef enum {
     ERTS_EV_TYPE_NONE     = 0,
     ERTS_EV_TYPE_DRV_SEL  = 1, /* driver_select */
