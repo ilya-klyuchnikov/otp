@@ -1129,29 +1129,6 @@ ERTS_GLB_INLINE size_t sys_strlen(const char *s)
 }
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
 
-/* define function symbols (needed in sys_drv_api) */
-#define sys_fp_alloc     sys_alloc
-#define sys_fp_realloc   sys_realloc
-#define sys_fp_free      sys_free
-#define sys_fp_memcpy    memcpy
-#define sys_fp_memmove   memmove
-#define sys_fp_memcmp    memcmp
-#define sys_fp_memset    memset
-/* #define sys_fp_memzero    elib_memzero */
-#define sys_fp_strcmp    strcmp
-#define sys_fp_strncmp   strncmp
-#define sys_fp_strcpy    strcpy
-#define sys_fp_strncpy   strncpy
-#define sys_fp_strlen    strlen
-
-
-/* Return codes from the nb_read and nb_write functions */
-#define FD_READY 1
-#define FD_CONTINUE 2
-#define FD_ERROR 3
-
-
-
 /* Standard set of integer macros  .. */
 
 #define get_int64(s) (((Uint64)(((byte*) (s))[0]) << 56) | \
