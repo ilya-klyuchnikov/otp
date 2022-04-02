@@ -74,7 +74,7 @@ ERTS_GLB_INLINE
 int erts_cp_size(void);
 
 #if defined(BEAMASM) && defined(ERLANG_FRAME_POINTERS)
-extern ErtsFrameLayout ERTS_WRITE_UNLIKELY(erts_frame_layout);
+extern ErtsFrameLayout erts_frame_layout;
 #   define CP_SIZE erts_cp_size()
 #else
 #   define erts_frame_layout ERTS_FRAME_LAYOUT_RA

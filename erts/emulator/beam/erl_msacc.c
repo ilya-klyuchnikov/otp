@@ -48,9 +48,9 @@ static Eterm erts_msacc_gather_stats(ErtsMsAcc *msacc, ErtsHeapFactory *factory)
 static void erts_msacc_reset(ErtsMsAcc *msacc);
 static ErtsMsAcc* get_msacc(void);
 
-erts_tsd_key_t ERTS_WRITE_UNLIKELY(erts_msacc_key);
+erts_tsd_key_t erts_msacc_key;
 #ifndef ERTS_MSACC_ALWAYS_ON
-int ERTS_WRITE_UNLIKELY(erts_msacc_enabled);
+int erts_msacc_enabled;
 #endif
 
 static Eterm *erts_msacc_state_atoms = NULL;

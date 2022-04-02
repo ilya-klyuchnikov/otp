@@ -179,17 +179,6 @@ typedef ERTS_SYS_FD_TYPE ErtsSysFdType;
 #  define ERTS_UNLIKELY(BOOL) (BOOL)
 #endif
 
-/* AIX doesn't like this and claims section conflicts */
-#if ERTS_AT_LEAST_GCC_VSN__(2, 96, 0) && !defined(_AIX)
-#if (defined(__APPLE__) && defined(__MACH__)) || defined(__DARWIN__)
-#  define ERTS_WRITE_UNLIKELY(X) X __attribute__ ((section ("__DATA,ERTS_LOW_WRITE") ))
-#else
-#  define ERTS_WRITE_UNLIKELY(X) X __attribute__ ((section ("ERTS_LOW_WRITE") ))
-#endif
-#else
-#  define ERTS_WRITE_UNLIKELY(X) X
-#endif
-
 /* clang may have too low __GNUC__ versions but can handle it */
 #ifdef __GNUC__
 #  if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ > 5) || defined(__clang__)

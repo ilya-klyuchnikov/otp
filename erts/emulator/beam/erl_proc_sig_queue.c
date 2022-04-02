@@ -63,9 +63,9 @@
 #define ERTS_PROC_SIG_ADJ_MSGQ_MSGS_FACTOR \
     25
 
-Process *ERTS_WRITE_UNLIKELY(erts_dirty_process_signal_handler);
-Process *ERTS_WRITE_UNLIKELY(erts_dirty_process_signal_handler_high);
-Process *ERTS_WRITE_UNLIKELY(erts_dirty_process_signal_handler_max);
+Process *erts_dirty_process_signal_handler;
+Process *erts_dirty_process_signal_handler_high;
+Process *erts_dirty_process_signal_handler_max;
 
 #ifdef ERTS_SUPPORT_OLD_RECV_MARK_INSTRS
 Eterm erts_old_recv_marker_id;

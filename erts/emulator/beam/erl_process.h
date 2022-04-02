@@ -99,14 +99,14 @@ struct saved_calls {
 };
 
 extern Export exp_send, exp_receive, exp_timeout;
-extern int ERTS_WRITE_UNLIKELY(erts_sched_compact_load);
-extern int ERTS_WRITE_UNLIKELY(erts_sched_balance_util);
-extern Uint ERTS_WRITE_UNLIKELY(erts_no_schedulers);
-extern Uint ERTS_WRITE_UNLIKELY(erts_no_total_schedulers);
-extern Uint ERTS_WRITE_UNLIKELY(erts_no_dirty_cpu_schedulers);
-extern Uint ERTS_WRITE_UNLIKELY(erts_no_dirty_io_schedulers);
-extern Uint ERTS_WRITE_UNLIKELY(erts_no_run_queues);
-extern int ERTS_WRITE_UNLIKELY(erts_no_aux_work_threads);
+extern int erts_sched_compact_load;
+extern int erts_sched_balance_util;
+extern Uint erts_no_schedulers;
+extern Uint erts_no_total_schedulers;
+extern Uint erts_no_dirty_cpu_schedulers;
+extern Uint erts_no_dirty_io_schedulers;
+extern Uint erts_no_run_queues;
+extern int erts_no_aux_work_threads;
 extern int erts_sched_thread_suggested_stack_size;
 extern int erts_dcpu_sched_thread_suggested_stack_size;
 extern int erts_dio_sched_thread_suggested_stack_size;
@@ -522,7 +522,7 @@ typedef union {
     char align[ERTS_ALC_CACHE_LINE_ALIGN_SIZE(sizeof(ErtsRunQueue))];
 } ErtsAlignedRunQueue;
 
-extern ErtsAlignedRunQueue * ERTS_WRITE_UNLIKELY(erts_aligned_run_queues);
+extern ErtsAlignedRunQueue * erts_aligned_run_queues;
 
 #define ERTS_PROC_REDUCTIONS_EXECUTED(SD, RQ, PRIO, REDS, AREDS)\
 do {								\
@@ -738,9 +738,9 @@ typedef union {
     char align[ERTS_ALC_CACHE_LINE_ALIGN_SIZE(sizeof(ErtsSchedulerData))];
 } ErtsAlignedSchedulerData;
 
-extern ErtsAlignedSchedulerData * ERTS_WRITE_UNLIKELY(erts_aligned_scheduler_data);
-extern ErtsAlignedSchedulerData * ERTS_WRITE_UNLIKELY(erts_aligned_dirty_cpu_scheduler_data);
-extern ErtsAlignedSchedulerData * ERTS_WRITE_UNLIKELY(erts_aligned_dirty_io_scheduler_data);
+extern ErtsAlignedSchedulerData * erts_aligned_scheduler_data;
+extern ErtsAlignedSchedulerData * erts_aligned_dirty_cpu_scheduler_data;
+extern ErtsAlignedSchedulerData * erts_aligned_dirty_io_scheduler_data;
 
 
 #if defined(ERTS_ENABLE_LOCK_CHECK)
@@ -1434,7 +1434,7 @@ void erts_check_for_holes(Process* p);
      | SPO_MAX_HEAP_SIZE             \
      | SPO_SCHEDULER)
 
-extern int ERTS_WRITE_UNLIKELY(erts_default_spo_flags);
+extern int erts_default_spo_flags;
 
 /*
  * The following struct contains options for a process to be spawned.
@@ -1516,10 +1516,10 @@ extern erts_rwmtx_t erts_cpu_bind_rwmtx;
 ** erts_system_monitor must be != NIL, to allow testing on just
 ** the erts_system_monitor_* variables.
 */
-extern Eterm ERTS_WRITE_UNLIKELY(erts_system_monitor);
-extern Uint ERTS_WRITE_UNLIKELY(erts_system_monitor_long_gc);
-extern Uint ERTS_WRITE_UNLIKELY(erts_system_monitor_long_schedule);
-extern Uint ERTS_WRITE_UNLIKELY(erts_system_monitor_large_heap);
+extern Eterm erts_system_monitor;
+extern Uint erts_system_monitor_long_gc;
+extern Uint erts_system_monitor_long_schedule;
+extern Uint erts_system_monitor_large_heap;
 struct erts_system_monitor_flags_t {
 	 unsigned int busy_port : 1;
     unsigned int busy_dist_port : 1;

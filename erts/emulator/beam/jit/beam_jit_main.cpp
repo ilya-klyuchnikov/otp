@@ -35,7 +35,7 @@ extern "C"
 }
 
 #ifdef ERLANG_FRAME_POINTERS
-ErtsFrameLayout ERTS_WRITE_UNLIKELY(erts_frame_layout);
+ErtsFrameLayout erts_frame_layout;
 #endif
 
 /* Global configuration variables (under the `+J` prefix) */

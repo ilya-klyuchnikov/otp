@@ -147,12 +147,10 @@ typedef struct {
 } ErtsAllocatorFunctions_t;
 
 extern erts_tsd_key_t erts_thr_alloc_data_key;
-extern ErtsAllocatorFunctions_t
-    ERTS_WRITE_UNLIKELY(erts_allctrs[ERTS_ALC_A_MAX+1]);
-extern ErtsAllocatorInfo_t
-    ERTS_WRITE_UNLIKELY(erts_allctrs_info[ERTS_ALC_A_MAX+1]);
+extern ErtsAllocatorFunctions_t erts_allctrs[ERTS_ALC_A_MAX+1];
+extern ErtsAllocatorInfo_t erts_allctrs_info[ERTS_ALC_A_MAX+1];
 
-extern Uint ERTS_WRITE_UNLIKELY(erts_no_dirty_alloc_instances);
+extern Uint erts_no_dirty_alloc_instances;
 
 typedef struct {
     int enabled;

@@ -130,14 +130,14 @@ runq_got_work_to_execute(ErtsRunQueue *rq)
 
 const Process erts_invalid_process = {{ERTS_INVALID_PID}};
 
-int ERTS_WRITE_UNLIKELY(erts_default_spo_flags) = SPO_ON_HEAP_MSGQ;
-int ERTS_WRITE_UNLIKELY(erts_sched_compact_load);
-int ERTS_WRITE_UNLIKELY(erts_sched_balance_util) = 0;
-Uint ERTS_WRITE_UNLIKELY(erts_no_schedulers);
-Uint ERTS_WRITE_UNLIKELY(erts_no_total_schedulers);
-Uint ERTS_WRITE_UNLIKELY(erts_no_dirty_cpu_schedulers) = 0;
-Uint ERTS_WRITE_UNLIKELY(erts_no_dirty_io_schedulers) = 0;
-int ERTS_WRITE_UNLIKELY(erts_no_aux_work_threads);
+int erts_default_spo_flags = SPO_ON_HEAP_MSGQ;
+int erts_sched_compact_load;
+int erts_sched_balance_util = 0;
+Uint erts_no_schedulers;
+Uint erts_no_total_schedulers;
+Uint erts_no_dirty_cpu_schedulers = 0;
+Uint erts_no_dirty_io_schedulers = 0;
+int erts_no_aux_work_threads;
 
 static char *erts_aux_work_flag_descr[ERTS_SSI_AUX_WORK_NO_FLAGS] = {0};
 int erts_aux_work_no_flags = ERTS_SSI_AUX_WORK_NO_FLAGS;
@@ -177,7 +177,7 @@ typedef union {
     char align[ERTS_ALC_CACHE_LINE_ALIGN_SIZE(sizeof(ErtsAuxWorkData))];
 } ErtsAlignedAuxWorkData;
 
-static ErtsAlignedAuxWorkData *ERTS_WRITE_UNLIKELY(aligned_aux_work_data);
+static ErtsAlignedAuxWorkData *aligned_aux_work_data;
 
 #define ERTS_SCHDLR_SSPND_CHNG_NMSB		(((erts_aint32_t) 1) << 0)
 #define ERTS_SCHDLR_SSPND_CHNG_MSB		(((erts_aint32_t) 1) << 1)
@@ -333,7 +333,7 @@ do {							\
 
 erts_sched_stat_t erts_sched_stat;
 
-static erts_tsd_key_t ERTS_WRITE_UNLIKELY(sched_data_key);
+static erts_tsd_key_t sched_data_key;
 
 #if ERTS_POLL_USE_SCHEDULER_POLLING
 static erts_atomic32_t function_calls;
@@ -345,8 +345,8 @@ static ethr_event runq_supervision_event;
 static erts_tid_t runq_supervisor_tid;
 static erts_atomic_t runq_supervisor_sleeping;
 
-ErtsAlignedRunQueue * ERTS_WRITE_UNLIKELY(erts_aligned_run_queues);
-Uint ERTS_WRITE_UNLIKELY(erts_no_run_queues);
+ErtsAlignedRunQueue * erts_aligned_run_queues;
+Uint erts_no_run_queues;
 
 
 struct {
@@ -390,9 +390,9 @@ dirty_active(ErtsSchedulerData *esdp, erts_aint32_t add)
     erts_atomic32_set_nob(ap, val);
 }
 
-ErtsAlignedSchedulerData * ERTS_WRITE_UNLIKELY(erts_aligned_scheduler_data);
-ErtsAlignedSchedulerData * ERTS_WRITE_UNLIKELY(erts_aligned_dirty_cpu_scheduler_data);
-ErtsAlignedSchedulerData * ERTS_WRITE_UNLIKELY(erts_aligned_dirty_io_scheduler_data);
+ErtsAlignedSchedulerData * erts_aligned_scheduler_data;
+ErtsAlignedSchedulerData * erts_aligned_dirty_cpu_scheduler_data;
+ErtsAlignedSchedulerData * erts_aligned_dirty_io_scheduler_data;
 typedef union {
     Process dsp;
     char align[ERTS_ALC_CACHE_LINE_ALIGN_SIZE(sizeof(Process))];
@@ -420,14 +420,14 @@ typedef union {
 } ErtsAlignedBlockPollThreadData;
 
 
-static ErtsAlignedBlockPollThreadData *ERTS_WRITE_UNLIKELY(block_poll_thread_data);
+static ErtsAlignedBlockPollThreadData *block_poll_thread_data;
 
 static Uint last_reductions;
 static Uint last_exact_reductions;
-Eterm ERTS_WRITE_UNLIKELY(erts_system_monitor);
-Eterm ERTS_WRITE_UNLIKELY(erts_system_monitor_long_gc);
-Uint ERTS_WRITE_UNLIKELY(erts_system_monitor_long_schedule);
-Eterm ERTS_WRITE_UNLIKELY(erts_system_monitor_large_heap);
+Eterm erts_system_monitor;
+Eterm erts_system_monitor_long_gc;
+Uint erts_system_monitor_long_schedule;
+Eterm erts_system_monitor_large_heap;
 struct erts_system_monitor_flags_t erts_system_monitor_flags;
 
 /* system performance monitor */

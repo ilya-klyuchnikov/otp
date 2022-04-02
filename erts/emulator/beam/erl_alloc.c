@@ -94,9 +94,9 @@ static Uint install_debug_functions(void);
 
 static int lock_all_physical_memory = 0;
 
-ErtsAllocatorFunctions_t ERTS_WRITE_UNLIKELY(erts_allctrs[ERTS_ALC_A_MAX+1]);
+ErtsAllocatorFunctions_t erts_allctrs[ERTS_ALC_A_MAX+1];
 ErtsAllocatorInfo_t erts_allctrs_info[ERTS_ALC_A_MAX+1];
-ErtsAllocatorThrSpec_t ERTS_WRITE_UNLIKELY(erts_allctr_thr_spec[ERTS_ALC_A_MAX+1]);
+ErtsAllocatorThrSpec_t erts_allctr_thr_spec[ERTS_ALC_A_MAX+1];
 
 #define ERTS_MIN(A, B) ((A) < (B) ? (A) : (B))
 #define ERTS_MAX(A, B) ((A) > (B) ? (A) : (B))
@@ -149,7 +149,7 @@ ERTS_SCHED_PREF_QUICK_ALLOC_IMPL(aireq,
 ErtsAlcType_t erts_fix_core_allocator_ix;
 erts_tsd_key_t erts_thr_alloc_data_key;
 
-Uint ERTS_WRITE_UNLIKELY(erts_no_dirty_alloc_instances);
+Uint erts_no_dirty_alloc_instances;
 
 struct au_init {
     int enable;

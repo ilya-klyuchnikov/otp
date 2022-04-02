@@ -190,8 +190,8 @@ struct drv_ev_state_shared {
 #endif
 };
 
-int ERTS_WRITE_UNLIKELY(erts_no_pollsets) = 1;
-int ERTS_WRITE_UNLIKELY(erts_no_poll_threads) = 1;
+int erts_no_pollsets = 1;
+int erts_no_poll_threads = 1;
 struct drv_ev_state_shared drv_ev_state;
 
 static ERTS_INLINE int fd_hash(ErtsSysFdType fd)
