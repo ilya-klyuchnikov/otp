@@ -385,19 +385,6 @@ static void (*esock_sctp_freepaddrs)(struct sockaddr *addrs) = NULL;
 #include "socket_util.h"
 #include "prim_file_nif_dyncall.h"
 
-#if defined(ERTS_INLINE)
-#  define ESOCK_INLINE ERTS_INLINE
-#else
-#  if defined(__GNUC__)
-#    define ESOCK_INLINE __inline__
-#  elif defined(__WIN32__)
-#    define ESOCK_INLINE __inline
-#  else
-#    define ESOCK_INLINE
-#  endif
-#endif
-
-
 #if defined(SOL_IPV6) || defined(IPPROTO_IPV6)
 #define HAVE_IPV6
 #endif
@@ -4494,7 +4481,7 @@ static ESockData data;
 /* These two (inline) functions are primarily intended for debugging,
  * that is, to make it easy to add debug printouts.
  */
-static ESOCK_INLINE void esock_free_env(const char* slogan, ErlNifEnv* env)
+static void esock_free_env(const char* slogan, ErlNifEnv* env)
 {
     SGDBG( ("SOCKET", "env free - %s: 0x%lX\r\n", slogan, env) );
     // esock_dbg_printf("SOCK ENV", "free - %s: 0x%lX\r\n", slogan, env);
@@ -4503,7 +4490,7 @@ static ESOCK_INLINE void esock_free_env(const char* slogan, ErlNifEnv* env)
 }
 
 
-static ESOCK_INLINE ErlNifEnv* esock_alloc_env(const char* slogan)
+static ErlNifEnv* esock_alloc_env(const char* slogan)
 {
     ErlNifEnv* env;
 
