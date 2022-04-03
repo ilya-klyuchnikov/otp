@@ -39,7 +39,6 @@ void beam_catches_delmod(unsigned head,
                          const BeamCodeHeader *hdr,
                          unsigned code_bytes,
                          ErtsCodeIndex code_ix);
-ErtsCodePtr beam_catches_car_staging(unsigned i);
 #define catch_pc(x)	beam_catches_car(catch_val((x)))
 
 #endif	/* __BEAM_CATCHES_H */

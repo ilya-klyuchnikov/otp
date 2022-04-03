@@ -32,12 +32,6 @@ typedef struct {
     unsigned cdr;
 } beam_catch_t;
 
-#ifdef DEBUG
-#  define IF_DEBUG(x) x
-#else
-#  define IF_DEBUG(x)
-#endif
-
 struct bc_pool {
     int free_list;
     unsigned high_mark;
@@ -48,8 +42,6 @@ struct bc_pool {
      * are readonly as long as the module is not purgable. The free-list is
      * protected by the code_ix lock.
      */
-
-    IF_DEBUG(int is_staging;)
 };
 
 static struct bc_pool bccix[ERTS_NUM_CODE_IX];
@@ -63,12 +55,10 @@ void beam_catches_init(void)
     bccix[0].high_mark = 0;
     bccix[0].beam_catches = erts_alloc(ERTS_ALC_T_CATCHES,
 				     sizeof(beam_catch_t)*DEFAULT_TABSIZE);
-    IF_DEBUG(bccix[0].is_staging = 0);
     for (i=1; i<ERTS_NUM_CODE_IX; i++) {
 	bccix[i] = bccix[i-1];
     }
      /* For initial load: */
-    IF_DEBUG(bccix[erts_staging_code_ix()].is_staging = 1);
 }
 
 
@@ -94,12 +84,11 @@ void beam_catches_start_staging(void)
 
     bccix[dst] = bccix[src];
     gc_old_vec(prev_vec);
-    IF_DEBUG(bccix[dst].is_staging = 1);
 }
 
 void beam_catches_end_staging(int commit)
 {
-    IF_DEBUG(bccix[erts_staging_code_ix()].is_staging = 0);
+
 }
 
 unsigned beam_catches_cons(ErtsCodePtr cp, unsigned cdr, ErtsCodePtr **cppp)
@@ -144,16 +133,6 @@ unsigned beam_catches_cons(ErtsCodePtr cp, unsigned cdr, ErtsCodePtr **cppp)
 ErtsCodePtr beam_catches_car(unsigned i)
 {
     struct bc_pool* p = &bccix[erts_active_code_ix()];
-
-    if (i >= p->tabsize ) {
-	erts_exit(ERTS_ERROR_EXIT, "beam_catches_delmod: index %#x is out of range\r\n", i);
-    }
-    return p->beam_catches[i].cp;
-}
-
-ErtsCodePtr beam_catches_car_staging(unsigned i)
-{
-    struct bc_pool* p = &bccix[erts_staging_code_ix()];
 
     if (i >= p->tabsize ) {
 	erts_exit(ERTS_ERROR_EXIT, "beam_catches_delmod: index %#x is out of range\r\n", i);
