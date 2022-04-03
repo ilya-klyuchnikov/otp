@@ -86,7 +86,6 @@ static Module* module_alloc(Module* tmpl)
     erts_module_instance_init(&obj->curr);
     erts_module_instance_init(&obj->old);
     obj->on_load = 0;
-    DBG_TRACE_MFA(make_atom(obj->module), 0, 0, "module_alloc");
     return obj;
 }
 

@@ -2161,8 +2161,6 @@ delete_code(Module* modp)
                 if (BeamIsOpCode(ep->trampoline.common.op, op_i_generic_breakpoint)) {
 		    ERTS_LC_ASSERT(erts_thr_progress_is_blocking());
 		    ASSERT(modp->curr.num_traced_exports > 0);
-		    DBG_TRACE_MFA_P(&ep->info.mfa,
-				  "export trace cleared, code_ix=%d", code_ix);
 		    erts_clear_export_break(modp, ep);
 		}
 		else {
@@ -2180,9 +2178,6 @@ delete_code(Module* modp)
             ep->trampoline.not_loaded.deferred = 0;
 
             erts_activate_export_trampoline(ep, code_ix);
-
-	    DBG_TRACE_MFA_P(&ep->info.mfa,
-			    "export invalidation, code_ix=%d", code_ix);
 	}
     }
 

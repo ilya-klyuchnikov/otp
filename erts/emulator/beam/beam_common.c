@@ -1285,7 +1285,6 @@ call_error_handler(Process* p, const ErtsCodeMFA *mfa, Eterm* reg, Eterm func)
     Uint sz;
     int i;
 
-    DBG_TRACE_MFA_P(mfa, "call_error_handler");
     /*
      * Search for the error_handler module.
      */

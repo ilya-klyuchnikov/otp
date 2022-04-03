@@ -134,33 +134,4 @@ void erts_purge_state_add_fun(struct erl_fun_entry *fe);
 Export *erts_suspend_process_on_pending_purge_lambda(Process *c_p,
                                                      struct erl_fun_entry*);
 
-/*
- * MFA event debug "tracing" usage:
- *
- * #define ENABLE_DBG_TRACE_MFA
- * call dbg_set_traced_mfa("mymod","myfunc",arity)
- * for the function(s) to trace, in some init function.
- *
- * Run and get stderr printouts when interesting things happen to your MFA.
- */
-#ifdef  ENABLE_DBG_TRACE_MFA
-
-void dbg_set_traced_mfa(const char* m, const char* f, Uint a);
-int dbg_is_traced_mfa(Eterm m, Eterm f, Uint a);
-void dbg_vtrace_mfa(unsigned ix, const char* format, ...);
-#define DBG_TRACE_MFA(M,F,A,FMT, ...) do {\
-    unsigned ix;\
-    if ((ix=dbg_is_traced_mfa(M,F,A))) \
-        dbg_vtrace_mfa(ix, FMT"\n", ##__VA_ARGS__);\
-  }while(0)
-
-#define DBG_TRACE_MFA_P(MFA, FMT, ...) \
-        DBG_TRACE_MFA((MFA)->module, (MFA)->function, (MFA)->arity, FMT, ##__VA_ARGS__)
-
-#else
-#  define dbg_set_traced_mfa(M,F,A)
-#  define DBG_TRACE_MFA(M,F,A,FMT, ...)
-#  define DBG_TRACE_MFA_P(MFA,FMT, ...)
-#endif /* ENABLE_DBG_TRACE_MFA */
-
 #endif
