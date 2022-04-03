@@ -56,20 +56,6 @@ void init_load(void)
     erts_total_code_size = 0;
     beam_catches_init();
     erts_init_ranges();
-
-#ifdef DEBUG
-    {
-        int i;
-
-        for (i = 1; i < NUM_GENERIC_OPS; i++) {
-            const GenOpEntry *op = &gen_opc[i];
-
-            ASSERT(op->name && op->name[0] != '\0');
-            ASSERT(op->arity <= ERTS_BEAM_MAX_OPARGS);
-            ASSERT(op->num_specific <= 1 || op->arity <= 6);
-        }
-    }
-#endif
 }
 
 Binary *erts_alloc_loader_state(void) {
@@ -278,13 +264,6 @@ erts_finish_loading(Binary* magic, Process* c_p,
 
     beam_load_finalize_code(stp, inst_p);
 
-#if defined(LOAD_MEMORY_HARD_DEBUG) && defined(DEBUG)
-    erts_fprintf(stderr,"Loaded %T\n",*modp);
-#if 0
-    debug_dump_code(stp->code,stp->ci);
-#endif
-#endif
-
     *modp = stp->module;
 
     /* If there is an on_load function, signal an error to
@@ -372,9 +351,6 @@ void beam_load_report_error(int line, LoaderState* context, char *fmt,...)
     va_end(va);
 
     erts_dsprintf(dsbufp, "\n");
-#ifdef DEBUG
-    erts_fprintf(stderr, "%s", dsbufp->str);
-#endif
     erts_send_error_to_logger(context->group_leader, dsbufp);
 }
 
