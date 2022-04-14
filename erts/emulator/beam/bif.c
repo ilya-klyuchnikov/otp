@@ -46,7 +46,6 @@
 #include "erl_msacc.h"
 #include "erl_proc_sig_queue.h"
 #include "erl_fun.h"
-#include "ryu.h"
 #include "jit/beam_asm.h"
 #include "erl_global_literals.h"
 #include "beam_load.h"
@@ -3440,7 +3439,6 @@ static int do_float_to_charbuf(Process *p, Eterm efloat, Eterm list,
     int compact = 0;
     enum fmt_type_ {
         FMT_LEGACY,
-        FMT_SHORT,
         FMT_FIXED,
         FMT_SCIENTIFIC
     } fmt_type = FMT_LEGACY;
@@ -3469,9 +3467,6 @@ static int do_float_to_charbuf(Process *p, Eterm efloat, Eterm list,
                         continue;
                 }
             }
-        } else if (arg == am_short) {
-            fmt_type = FMT_SHORT;
-            continue;
         }
         goto badarg;
     }
@@ -3482,13 +3477,7 @@ static int do_float_to_charbuf(Process *p, Eterm efloat, Eterm list,
 
     GET_DOUBLE(efloat, f);
 
-    if (fmt_type == FMT_SHORT) {
-        const int index = d2s_buffered_n(f.fd, fbuf);
-
-        /* Terminate the string. */
-        fbuf[index] = '\0';
-        return index;
-    } else if (fmt_type == FMT_FIXED) {
+    if (fmt_type == FMT_FIXED) {
         return sys_double_to_chars_fast(f.fd, fbuf, sizeof_fbuf,
                 decimals, compact);
     } else {
