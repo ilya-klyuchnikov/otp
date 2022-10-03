@@ -75,13 +75,9 @@ local_setup:
 	@rm -f $(ERL_TOP)/bin/erl $(ERL_TOP)/bin/erlc $(ERL_TOP)/bin/cerl \
 		$(ERL_TOP)/bin/erl.exe $(ERL_TOP)/bin/erlc.exe \
 		$(ERL_TOP)/bin/escript $(ERL_TOP)/bin/escript.exe \
-		$(ERL_TOP)/bin/dialyzer $(ERL_TOP)/bin/dialyzer.exe \
-		$(ERL_TOP)/bin/typer $(ERL_TOP)/bin/typer.exe \
 		$(ERL_TOP)/bin/ct_run $(ERL_TOP)/bin/ct_run.exe \
 		$(ERL_TOP)/bin/start*.boot $(ERL_TOP)/bin/start*.script
 	@if [ "X$(TARGET)" = "Xwin32" ]; then \
-		cp $(ERL_TOP)/bin/$(TARGET)/dialyzer.exe $(ERL_TOP)/bin/dialyzer.exe; \
-		cp $(ERL_TOP)/bin/$(TARGET)/typer.exe $(ERL_TOP)/bin/typer.exe; \
 		cp $(ERL_TOP)/bin/$(TARGET)/ct_run.exe $(ERL_TOP)/bin/ct_run.exe; \
 		cp $(ERL_TOP)/bin/$(TARGET)/erlc.exe $(ERL_TOP)/bin/erlc.exe; \
 		cp $(ERL_TOP)/bin/$(TARGET)/erl.exe $(ERL_TOP)/bin/erl.exe; \
@@ -105,8 +101,6 @@ local_setup:
 		-e "s;%DYN_ERL_PATH%;$(TARGET)/dyn_erl;" \
 	        $(ERL_TOP)/erts/etc/unix/cerl.src > $(ERL_TOP)/bin/cerl; \
 		cp $(ERL_TOP)/bin/$(TARGET)/erl_call $(ERL_TOP)/bin/erl_call; \
-		cp $(ERL_TOP)/bin/$(TARGET)/dialyzer $(ERL_TOP)/bin/dialyzer; \
-		cp $(ERL_TOP)/bin/$(TARGET)/typer $(ERL_TOP)/bin/typer; \
 		cp $(ERL_TOP)/bin/$(TARGET)/ct_run $(ERL_TOP)/bin/ct_run; \
 		cp $(ERL_TOP)/bin/$(TARGET)/erlc $(ERL_TOP)/bin/erlc; \
 		cp $(ERL_TOP)/bin/$(TARGET)/escript $(ERL_TOP)/bin/escript; \
