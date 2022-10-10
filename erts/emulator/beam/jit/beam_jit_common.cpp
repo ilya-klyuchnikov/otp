@@ -359,6 +359,7 @@ void BeamModuleAssembler::register_metadata(const BeamCodeHeader *header) {
     char name_buffer[MAX_ATOM_SZ_LIMIT];
     std::string module_name = getAtom(mod);
     std::vector<AsmRange> ranges;
+    ERTS_DECL_AM(erts_beamasm);
 
     ranges.reserve(functions.size() + 2);
 
@@ -378,8 +379,13 @@ void BeamModuleAssembler::register_metadata(const BeamCodeHeader *header) {
         start = getCode(functions[i]);
         ci = (const ErtsCodeInfo *)start;
 
-        stop = ((const char *)erts_codeinfo_to_code(ci)) +
-               BEAM_ASM_FUNC_PROLOGUE_SIZE;
+        stop = ((const char *)erts_codeinfo_to_code(ci));
+
+        if (ci->mfa.module != AM_erts_beamasm) {
+            /* All modules (except erts_beamasm, which is a JIT internal module)
+               have a prologue that should be counted as part of the CodeInfo */
+            stop = ((const char *)stop) + BEAM_ASM_FUNC_PROLOGUE_SIZE;
+        }
 
         n = erts_snprintf(name_buffer,
                           1024,
@@ -729,7 +735,6 @@ Eterm beam_jit_bs_init(Process *c_p,
                        Uint alloc,
                        unsigned Live) {
     erts_bin_offset = 0;
-    erts_writable_bin = 0;
     if (num_bytes <= ERL_ONHEAP_BIN_LIMIT) {
         ErlHeapBin *hb;
         Uint bin_need;
@@ -796,7 +801,6 @@ Eterm beam_jit_bs_init_bits(Process *c_p,
     }
 
     erts_bin_offset = 0;
-    erts_writable_bin = 0;
 
     /* num_bits = Number of bits to build
      * num_bytes = Number of bytes to allocate in the binary

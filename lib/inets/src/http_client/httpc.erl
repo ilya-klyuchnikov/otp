@@ -116,11 +116,11 @@ request(Url, Profile) ->
 %%                   {ssl,  ssl_options()} | 
 %%                   {essl, ssl_options()}
 %%      ssl_options() = [ssl_option()]
-%%	ssl_option() =  {verify, code()} | 
-%%                      {depth, depth()} | 
+%%	ssl_option() =  {verify, code()} |
+%%                      {depth, depth()} |
 %%                      {certfile, path()} |
-%%	{keyfile, path()} | {password, string()} | {cacertfile, path()} |
-%%	{ciphers, string()} 
+%%	                {keyfile, path()} | {password, string()} |
+%%                      {cacertfile, path()} | {ciphers, string()}
 %%	Options - [Option]
 %%	Option -  {sync, Boolean}           | 
 %%                {body_format, BodyFormat} | 
@@ -135,7 +135,7 @@ request(Url, Profile) ->
 %%      Header = {Field, Value}
 %%	Field = [byte()]
 %%	Value = binary() | iolist()
-%%	Body = string() | binary() | {fun(SendAcc) -> SendFunResult, SendAcc} |
+%%	Body = iolist() | binary() | {fun(SendAcc) -> SendFunResult, SendAcc} |
 %%              {chunkify, fun(SendAcc) -> SendFunResult, SendAcc} - HTML-code
 %%      SendFunResult = eof | {ok, iolist(), NewSendAcc}
 %%      SendAcc = NewSendAcc = term()
@@ -765,12 +765,14 @@ http_options_default() ->
 		error
 	end,
 
+    Ssl = ssl_verify_host_options(true),
+
     UrlDecodePost =  boolfun(),
     [
      {version,         {value, "HTTP/1.1"},            #http_options.version,         VersionPost}, 
      {timeout,         {value, ?HTTP_REQUEST_TIMEOUT}, #http_options.timeout,         TimeoutPost},
      {autoredirect,    {value, true},                  #http_options.autoredirect,    AutoRedirectPost},
-     {ssl,             {value, {?HTTP_DEFAULT_SSL_KIND, []}}, #http_options.ssl,             SslPost},
+     {ssl,             {value, {?HTTP_DEFAULT_SSL_KIND, Ssl}}, #http_options.ssl,     SslPost},
      {proxy_auth,      {value, undefined},             #http_options.proxy_auth,      ProxyAuthPost},
      {relaxed,         {value, false},                 #http_options.relaxed,         RelaxedPost},
      {url_encode,      {value, false},                 #http_options.url_encode,      UrlDecodePost},

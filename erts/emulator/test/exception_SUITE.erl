@@ -54,13 +54,8 @@ all() ->
 
 init_per_testcase(_TestCase, Config) ->
     Config.
-end_per_testcase(_TestCase, _Config) ->
-    case nodes(connected) of
-        [] -> ok;
-        Nodes ->
-            [net_kernel:disconnect(N) || N <- Nodes],
-            {fail, {"Leaked connections", Nodes}}
-    end.
+end_per_testcase(_TestCase, Config) ->
+    erts_test_utils:ept_check_leaked_nodes(Config).
 
 -define(try_match(E),
         catch ?MODULE:bar(),
@@ -851,6 +846,8 @@ error_info(_Config) ->
 
          {display, ["test erlang:display/1"], [no_fail]},
          {display_string, [{a,b,c}]},
+         {display_string, [standard_out,"test erlang:display/2"]},
+         {display_string, [stdout,{a,b,c}]},
 
          %% Internal undcoumented BIFs.
          {dist_ctrl_get_data, 1},

@@ -38,7 +38,7 @@
 	 warnings/1, pre_load_check/1, env_compiler_options/1,
          bc_options/1, deterministic_include/1, deterministic_paths/1,
          compile_attribute/1, message_printing/1, other_options/1,
-         transforms/1, erl_compile_api/1, types_pp/1
+         transforms/1, erl_compile_api/1, types_pp/1, bs_init_writable/1
 	]).
 
 suite() -> [{ct_hooks,[ts_install_cth]}].
@@ -58,7 +58,7 @@ all() ->
      env_compiler_options, custom_debug_info, bc_options,
      custom_compile_info, deterministic_include, deterministic_paths,
      compile_attribute, message_printing, other_options, transforms,
-     erl_compile_api, types_pp].
+     erl_compile_api, types_pp, bs_init_writable].
 
 groups() -> 
     [].
@@ -1484,8 +1484,9 @@ do_warnings_2([], Next, F) ->
 
 message_printing(Config) ->
     DataDir = proplists:get_value(data_dir, Config),
-    BadEncFile = filename:join(DataDir, "bad_enc.erl"),
+    PrivDir = proplists:get_value(priv_dir, Config),
 
+    BadEncFile = filename:join(DataDir, "bad_enc.erl"),
     {error,BadEncErrors, []} = compile:file(BadEncFile, [return]),
 
     [":7:15: cannot parse file, giving up\n"
@@ -1510,6 +1511,24 @@ message_printing(Config) ->
      "%    6|     B = <<\"xyzåäö\">>,\t<<\"12345\">>,\n"
      "%     |                      \t^\n\n"
     ] = messages(Latin1Errors),
+
+    LongFile = filename:join(PrivDir, "long.erl"),
+    Long = ["-module(long).\n",
+            "-export([foo/0]).\n",
+            "unused() -> ok.\n",
+            lists:duplicate(10000, $\n),
+            "foo() -> bar().\n"],
+    ok = file:write_file(LongFile, Long),
+    {error,LongErrors,LongWarnings} = compile:file(LongFile, [return]),
+    [":10004:10: function bar/0 undefined\n"
+     "% 10004| foo() -> bar().\n"
+     "%      |          ^\n\n"
+    ] = messages(LongErrors),
+    [":3:1: function unused/0 is unused\n"
+     "%    3| unused() -> ok.\n"
+     "%     | ^\n\n"
+    ] = messages(LongWarnings),
+    ok = file:delete(LongFile),
 
     {ok,OldCwd} = file:get_cwd(),
     try
@@ -1691,7 +1710,8 @@ bc_options(Config) ->
          {168, small, [r22]},
          {168, small, [no_init_yregs,no_shared_fun_wrappers,
                        no_ssa_opt_record,no_make_fun3,
-                       no_ssa_opt_float,no_line_info,no_type_opt]},
+                       no_ssa_opt_float,no_line_info,no_type_opt,
+                       no_bs_match]},
          {169, small, [r23]},
 
          {169, big, [no_init_yregs,no_shared_fun_wrappers,
@@ -2027,9 +2047,9 @@ types_pp(Config) when is_list(Config) ->
                      "{any(), any(), any(), any(), any()}"},
                     {make_inexact_tuple, "{any(), any(), any(), ...}"},
                     {make_union,
-                     "'foo' | nonempty_list(1..3) | number() |"
-                     " {'tag0', 1, 2} | {'tag1', 3, 4} | bitstring(24)"},
-                    {make_bitstring, "bitstring(24)"},
+                     "'foo' | nonempty_list(1..3) | number(3, 7) |"
+                     " {'tag0', 1, 2} | {'tag1', 3, 4} | bitstring(8)"},
+                    {make_bitstring, "bitstring(8)"},
                     {make_none, "none()"}],
     lists:foreach(fun({FunName, Expected}) ->
                           Actual = map_get(atom_to_list(FunName), ResultTypes),
@@ -2063,6 +2083,22 @@ get_result_types([CallLine|Lines], TypeLine, Acc) ->
     [_,Callee,_] = string:split(CallLine, "`", all),
     get_result_types(Lines, Acc#{ Callee => TypeLine }).
 
+%% Check that the beam_ssa_type pass knows about bs_init_writable.
+bs_init_writable(Config) ->
+    DataDir = proplists:get_value(data_dir, Config),
+    PrivDir = proplists:get_value(priv_dir, Config),
+    InFile = filename:join(DataDir, "bs_init_writable.erl"),
+    OutDir = filename:join(PrivDir, "bs_init_writable"),
+    OutFile = filename:join(OutDir, "bs_init_writable.S"),
+    ok = file:make_dir(OutDir),
+    {ok,bs_init_writable} = compile:file(InFile, ['S',{outdir,OutDir}]),
+    {ok,Listing} = file:read_file(OutFile),
+    Os = [global,multiline,{capture,all_but_first,list}],
+    %% The is_bitstr test should be optimized away.
+    nomatch = re:run(Listing, "({test,is_bitstr,.+})", Os),
+    %% The is_bitstr test should be optimized away.
+    nomatch = re:run(Listing, "({test,is_binary,.+})", Os),
+    ok = file:del_dir_r(OutDir).
 
 
 %%%
