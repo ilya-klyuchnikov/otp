@@ -46,7 +46,6 @@ INSTALL_SCRIPTS = \
 REL_SCRIPTS = \
 	$(SS_ROOT)/start_clean.rel \
 	$(SS_ROOT)/start_sasl.rel \
-	$(SS_ROOT)/start_all_example.rel \
 	$(SS_ROOT)/no_dot_erlang.rel \
 
 ifneq ($(findstring win32,$(TARGET)),win32)
@@ -128,26 +127,6 @@ $(SS_ROOT)/no_dot_erlang.rel: $(SS_ROOT)/no_dot_erlang.rel.src \
             -e 's;%KERNEL_VSN%;$(KERNEL_VSN);' \
             -e 's;%STDLIB_VSN%;$(STDLIB_VSN);' \
           $(SS_ROOT)/no_dot_erlang.rel.src > $(SS_ROOT)/no_dot_erlang.rel
-
-$(SS_ROOT)/start_all_example.rel:	$(SS_ROOT)/start_all_example.rel.src \
-			../vsn.mk \
-			$(LIBPATH)/kernel/vsn.mk \
-			$(LIBPATH)/stdlib/vsn.mk \
-			$(LIBPATH)/sasl/vsn.mk \
-			$(LIBPATH)/os_mon/vsn.mk \
-			$(LIBPATH)/mnesia/vsn.mk \
-			$(LIBPATH)/snmp/vsn.mk \
-			$(LIBPATH)/inets/vsn.mk
-	$(gen_verbose)sed -e 's;%SYS_VSN%;$(SYSTEM_VSN);' \
-            -e 's;%ERTS_VSN%;$(VSN);' \
-            -e 's;%KERNEL_VSN%;$(KERNEL_VSN);' \
-            -e 's;%STDLIB_VSN%;$(STDLIB_VSN);' \
-            -e 's;%SASL_VSN%;$(SASL_VSN);' \
-            -e 's;%OS_MON_VSN%;$(OS_MON_VSN);' \
-            -e 's;%MNESIA_VSN%;$(MNESIA_VSN);' \
-            -e 's;%SNMP_VSN%;$(SNMPEA_VSN);' \
-            -e 's;%INETS_VSN%;$(INETS_VSN);' \
-          $(SS_ROOT)/start_all_example.rel.src > $(SS_ROOT)/start_all_example.rel
 
 ## Special target used from $(ERL_TOP)/erts/Makefile.
 $(ERL_TOP)/bin/start.script:
