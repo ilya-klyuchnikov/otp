@@ -412,6 +412,50 @@ erts_offset_off_heap(ErlOffHeap *ohp, Sint offs, Eterm* low, Eterm* high)
 }
 #undef ptr_within
 
+ERTS_GLB_INLINE void move_cons_local(Eterm *ERTS_RESTRICT ptr, Eterm car, Eterm **hpp,
+                                     Eterm *orig);
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+ERTS_GLB_INLINE void move_cons_local(Eterm *ERTS_RESTRICT ptr, Eterm car, Eterm **hpp,
+                                     Eterm *orig)
+{
+    Eterm *ERTS_RESTRICT htop = *hpp;
+    Eterm gval;
+    Eterm tail;
+
+    htop[0] = car;               /* copy car */
+    htop[1] = ptr[1];            /* copy cdr */
+    tail = ptr[1];
+    gval    = make_list(htop);   /* new location */
+    *orig   = gval;              /* redirect original reference */
+    ptr[0]  = THE_NON_VALUE;     /* store forwarding indicator */
+    ptr[1]  = gval;              /* store forwarding address */
+    *hpp   += 2;                 /* update tospace htop */
+
+    while (is_list(tail)) {
+        Eterm *tail_ptr = list_val(tail);
+        Eterm tail_val = *tail_ptr;
+        if (IS_MOVED_CONS(tail_val)) {
+            return;
+        }
+        if (!is_small(tail_ptr[0])) {
+            return;
+        }
+        if (erts_is_literal(tail_val, tail_ptr)) {
+            return;
+        }
+        htop = *hpp;
+        htop[0] = tail_val;
+        htop[1] = tail_ptr[1];
+        tail = tail_ptr[1];
+
+        gval = make_list(htop);
+        tail_ptr[0] = THE_NON_VALUE;
+        tail_ptr[1] = gval;
+        *hpp   += 2;
+    }
+}
+#endif
+
 Eterm
 erts_gc_after_bif_call_lhf(Process* p, ErlHeapFragment *live_hf_end,
 			   Eterm result, Eterm* regs, Uint arity)
@@ -1974,7 +2018,7 @@ full_sweep_heaps(Process *p,
 		if (IS_MOVED_CONS(val)) {
 		    *g_ptr = ptr[1];
 		} else if (!erts_is_literal(gval, ptr)) {
-		    move_cons(ptr,val,&n_htop,g_ptr);
+                   move_cons_local(ptr,val,&n_htop,g_ptr);
 		}
                 break;
 	    }
