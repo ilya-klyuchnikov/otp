@@ -2315,7 +2315,11 @@ sweep(Eterm *n_hp, Eterm *n_htop,
 	    if (IS_MOVED_CONS(val)) {
 		*n_hp++ = ptr[1];
 	    } else if (ERTS_IS_IN_SWEEP_AREA(gval, ptr)) {
-		move_cons(ptr,val,&n_htop,n_hp++);
+                if (type == ErtsSweepHeaps) {
+                    move_cons_local(ptr, val, &n_htop, n_hp++);
+                } else {
+                    move_cons(ptr, val, &n_htop, n_hp++);
+                }
 	    } else {
 		n_hp++;
 	    }
