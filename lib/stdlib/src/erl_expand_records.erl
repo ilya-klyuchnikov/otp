@@ -19,6 +19,7 @@
 %%
 %% Purpose: Expand records into tuples. Also add explicit module
 %% names to calls to imported functions and BIFs.
+%% Also add explicit module names to usages of imported types.
 
 -module(erl_expand_records).
 
@@ -29,6 +30,7 @@
 -record(exprec, {compile=[],	% Compile flags
 		 vcount=0,	% Variable counter
 		 calltype=#{},	% Call types
+     typetype=#{},  % Type types
 		 records=#{},	% Record definitions
                  raw_records=[],% Raw record forms
 		 strict_ra=[],	% strict record accesses
@@ -47,7 +49,8 @@ module(Fs0, Opts0) ->
     Opts = compiler_options(Fs0) ++ Opts0,
     Dialyzer = lists:member(dialyzer, Opts),
     Calltype = init_calltype(Fs0),
-    St0 = #exprec{compile = Opts, dialyzer = Dialyzer, calltype = Calltype},
+    Typetype = init_typetype(Fs0),
+    St0 = #exprec{compile = Opts, dialyzer = Dialyzer, calltype = Calltype, typetype = Typetype},
     {Fs,_St} = forms(Fs0, St0),
     Fs.
 
@@ -67,6 +70,17 @@ init_calltype_imports([{attribute,_,import,{Mod,Fs}}|T], Ctype0) ->
 init_calltype_imports([_|T], Ctype) ->
     init_calltype_imports(T, Ctype);
 init_calltype_imports([], Ctype) -> Ctype.
+
+init_typetype(Forms) ->
+    init_typetype_imports(Forms, #{}).
+
+init_typetype_imports([{attribute,_,import_type,{Mod,Fs}}|T], Ttype0) ->
+    true = is_atom(Mod),
+    Ttype = foldl(fun(TA, Acc) -> Acc#{TA=>{imported,Mod}} end, Ttype0, Fs),
+    init_typetype_imports(T, Ttype);
+init_typetype_imports([_|T], Ttype) ->
+    init_calltype_imports(T, Ttype);
+init_typetype_imports([], Ttype) -> Ttype.
 
 forms([{attribute,_,record,{Name,Defs}}=Attr | Fs], St0) ->
     NDefs = normalise_fields(Defs),
