@@ -294,10 +294,7 @@ format_error({redefine_bif_import,{F,A}}) ->
     io_lib:format("import directive overrides auto-imported BIF ~w/~w~n"
 		  " - use \"-compile({no_auto_import,[~w/~w]}).\" to resolve name clash", [F,A,F,A]);
 format_error({redefine_builtin_type_import, {F, A}}) ->
-  io_lib:format("import directive overrides auto-imported builtin type ~w/~w~n"
-    " - use \"-compile(no_auto_import_types).\" to resolve name clash",
-    [F, A]
-  );
+  io_lib:format("import directive overrides auto-imported builtin type ~w/~w~n", [F, A]);
 format_error({deprecated, MFA, String, Rel}) ->
     io_lib:format("~s is deprecated and will be removed in ~s; ~s",
 		  [format_mfa(MFA), Rel, String]);
@@ -1645,7 +1642,7 @@ check_type_imports(_Anno, Ts, St) ->
           [{T,Mod}|Ets];
         error ->
           {N,A} = T,
-          case erl_internal:is_type(N, A) andalso not member(no_auto_import_types, St#lint.compile) of
+          case erl_internal:is_type(N, A) of
             true ->
               [{type,T,erlang}|Ets];
             false ->
