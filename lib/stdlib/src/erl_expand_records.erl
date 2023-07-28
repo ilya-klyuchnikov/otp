@@ -1117,8 +1117,15 @@ type({type,Anno,union,Ts}, TType) ->
 type({var,Anno,V}, _TType) ->
     {var,Anno,V};
 type({user_type,Anno,N,As}, TType) ->
+    Arity = length(As),
+    TA = {N, Arity},
     As1 = type_list(As, TType),
-    {user_type,Anno,N,As1};
+    case TType of
+        #{TA := {imported,M}} ->
+            {remote_type,Anno,[{atom,Anno,M},{atom,Anno,N},As1]};
+        _ ->
+            {user_type,Anno,N,As1}
+    end;
 type({type,Anno,N,As}, TType) ->
     As1 = type_list(As, TType),
     {type,Anno,N,As1}.
