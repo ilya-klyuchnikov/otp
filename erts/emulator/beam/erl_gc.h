@@ -174,7 +174,6 @@ void erts_garbage_collect(struct process*, Uint, Eterm*, int);
 void erts_garbage_collect_hibernate(struct process* p);
 Eterm erts_gc_after_bif_call_lhf(struct process* p, ErlHeapFragment *live_hf_end,
 				 Eterm result, Eterm* regs, Uint arity);
-Eterm erts_gc_after_bif_call(struct process* p, Eterm result, Eterm* regs, Uint arity);
 int erts_garbage_collect_literals(struct process* p, Eterm* literals,
 				  Uint lit_size,
 				  struct erl_off_heap_header* oh,

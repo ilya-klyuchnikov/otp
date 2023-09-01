@@ -473,13 +473,6 @@ erts_gc_after_bif_call_lhf(Process* p, ErlHeapFragment *live_hf_end,
     return result;
 }
 
-Eterm
-erts_gc_after_bif_call(Process* p, Eterm result, Eterm* regs, Uint arity)
-{
-    return erts_gc_after_bif_call_lhf(p, ERTS_INVALID_HFRAG_PTR,
-                                      result, regs, arity);
-}
-
 static ERTS_INLINE void assert_no_active_writers(Process *p)
 {
 #ifdef DEBUG
