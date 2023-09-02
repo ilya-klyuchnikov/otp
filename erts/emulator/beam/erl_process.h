@@ -48,10 +48,6 @@ typedef struct process Process;
 #include "erl_atom_table.h"
 #include "external.h"
 
-#ifdef HIPE
-#include "hipe_process.h"
-#endif
-
 struct ErtsNodesMonitor_;
 struct port;
 

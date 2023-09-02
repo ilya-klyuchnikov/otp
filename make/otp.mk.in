@@ -40,7 +40,6 @@ DUBIOUS_ORIGINS = /undefined/environment/
 #	HiPE
 # ----------------------------------------------------
 
-HIPE_ENABLED=@HIPE_ENABLED@
 NATIVE_LIBS_ENABLED=@NATIVE_LIBS_ENABLED@
 
 # ----------------------------------------------------
