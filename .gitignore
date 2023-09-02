@@ -259,3 +259,5 @@ a.out.dSYM/
 /lib/xmerl/src/xmerl_sax_parser_*.erl
 /lib/xmerl/src/xmerl_b64Bin.erl
 /lib/xmerl/src/xmerl_xpath_parse.erl
+
+/.idea/
