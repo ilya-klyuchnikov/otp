@@ -3994,21 +3994,6 @@ fi
 
 fi # end - try to find javac
 
-dnl
-dnl Orber has a c++ example, this isn't the right way to check for
-dnl it, but....
-dnl
-AC_SUBST(CXXFLAGS)
-dnl this deliberately does not believe that 'gcc' is a C++ compiler
-AC_CHECK_TOOLS(CXX, [$CCC c++ g++ CC cxx cc++ cl], false)
-
-# Remove SKIP file from previous run
-/bin/rm -f $ERL_TOP/lib/orber/SKIP
-
-if test "$CXX" = false; then
-  echo "No C++ compiler found" > $ERL_TOP/lib/orber/SKIP
-fi
-
 dnl ----------------------------------------------------------------------
 dnl Include CPPFLAGS in CFLAGS
 dnl ----------------------------------------------------------------------
@@ -4129,12 +4114,10 @@ AC_OUTPUT(
 dnl
 dnl The ones below should be moved to their respective lib
 dnl
-  ../lib/ic/c_src/$host/Makefile:../lib/ic/c_src/Makefile.in
   ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in
   ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in
   ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in
   ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in
-  ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in
   ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in
   ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in
   )

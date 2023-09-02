@@ -27,7 +27,7 @@ ifeq ($(findstring vxworks,$(TARGET)),vxworks)
   OTHER_SUB_DIRECTORIES =	\
      snmp otp_mibs appmon erl_interface os_mon tools runtime_tools
   ifdef BUILD_ALL
-    OTHER_SUB_DIRECTORIES += mnesia jinterface ic asn1 debugger \
+    OTHER_SUB_DIRECTORIES += mnesia jinterface asn1 debugger \
 	inets mnesia_session orber pman tv observer cosTransactions cosEvent \
       cosTime cosNotification cosProperty cosFileTransfer cosEventDomain
   endif
@@ -55,7 +55,7 @@ else
     ifdef BUILD_ALL
       ifeq ($(findstring win32,$(TARGET)),win32) # BUILD_ALL on win32
         OTHER_SUB_DIRECTORIES += 			\
-          snmp otp_mibs appmon erl_interface asn1 jinterface gs wx inets ic \
+          snmp otp_mibs appmon erl_interface asn1 jinterface gs wx inets \
           mnesia crypto orber os_mon parsetools syntax_tools pman \
           public_key ssl toolbar tv observer debugger reltool odbc runtime_tools \
           cosTransactions cosEvent cosTime cosNotification cosProperty \
@@ -66,7 +66,7 @@ else
       else # BUILD_ALL on unix
         OTHER_SUB_DIRECTORIES += \
           snmp otp_mibs appmon erl_interface asn1 jinterface wx debugger reltool gs inets \
-          ic mnesia crypto orber os_mon parsetools syntax_tools \
+          mnesia crypto orber os_mon parsetools syntax_tools \
           pman public_key ssl toolbar tv observer odbc \
           runtime_tools cosTransactions cosEvent cosTime cosNotification \
           cosProperty cosFileTransfer cosEventDomain et megaco webtool \
@@ -89,7 +89,7 @@ else
       SUB_DIRECTORIES = snmp
     else
       ifdef FOURTH_BOOTSTRAP
-        SUB_DIRECTORIES = sasl jinterface ic syntax_tools
+        SUB_DIRECTORIES = sasl jinterface syntax_tools
       else # Not bootstrap build
         SUB_DIRECTORIES = $(ERTS_SUB_DIRECTORIES) $(OTHER_SUB_DIRECTORIES)
       endif

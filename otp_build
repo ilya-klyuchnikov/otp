@@ -913,7 +913,6 @@ do_primary_git ()
     git add -A bootstrap/lib/kernel \
         bootstrap/lib/stdlib \
 	bootstrap/lib/compiler \
-	bootstrap/lib/orber/include \
 	bootstrap/bin
     git commit -m 'Update primary bootstrap'
 }
@@ -955,7 +954,7 @@ do_commit ()
     fi
 
 
-    for x in compiler kernel stdlib orber/include; do
+    for x in compiler kernel stdlib; do
 	files=`$CT lspriv -do $ERL_TOP/bootstrap/lib/$x`
 	for y in $files; do
 	    echo "Creating $y"
@@ -1210,10 +1209,6 @@ do_copy_primary_bootstrap ()
     test -d $bootstrap/lib/compiler/ebin || mkdir -p  $bootstrap/lib/compiler/ebin
     cp -f $lib_src/compiler/ebin/*.beam $bootstrap/lib/compiler/ebin
     cp -f $lib_src/compiler/ebin/*.app* $bootstrap/lib/compiler/ebin
-
-    # orber include
-    test -d $bootstrap/lib/orber/include || mkdir -p  $bootstrap/lib/orber/include
-    cp -f $lib_src/orber/include/* $bootstrap/lib/orber/include
 
     # bootstrap bin
     if [ $bootstrap_src_top != $ERL_TOP ]; then

@@ -24973,13 +24973,6 @@ test -n "$ac_ct_CXX" || ac_ct_CXX="false"
 fi
 
 
-# Remove SKIP file from previous run
-/bin/rm -f $ERL_TOP/lib/orber/SKIP
-
-if test "$CXX" = false; then
-  echo "No C++ compiler found" > $ERL_TOP/lib/orber/SKIP
-fi
-
 CFLAGS="$CFLAGS $CPPFLAGS"
 
 #
@@ -25037,7 +25030,7 @@ done
 
 
 
-                                                                                                                                                                                              ac_config_files="$ac_config_files emulator/$host/Makefile:emulator/Makefile.in emulator/zlib/$host/Makefile:emulator/zlib/Makefile.in emulator/pcre/$host/Makefile:emulator/pcre/Makefile.in epmd/src/$host/Makefile:epmd/src/Makefile.in etc/common/$host/Makefile:etc/common/Makefile.in include/internal/$host/ethread.mk:include/internal/ethread.mk.in include/internal/$host/erts_internal.mk:include/internal/erts_internal.mk.in lib_src/$host/Makefile:lib_src/Makefile.in Makefile:Makefile.in ../make/$host/otp.mk:../make/otp.mk.in ../make/$host/otp_ded.mk:../make/otp_ded.mk.in ../lib/ic/c_src/$host/Makefile:../lib/ic/c_src/Makefile.in ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in"
+                                                                                                                                                                                              ac_config_files="$ac_config_files emulator/$host/Makefile:emulator/Makefile.in emulator/zlib/$host/Makefile:emulator/zlib/Makefile.in emulator/pcre/$host/Makefile:emulator/pcre/Makefile.in epmd/src/$host/Makefile:epmd/src/Makefile.in etc/common/$host/Makefile:etc/common/Makefile.in include/internal/$host/ethread.mk:include/internal/ethread.mk.in include/internal/$host/erts_internal.mk:include/internal/erts_internal.mk.in lib_src/$host/Makefile:lib_src/Makefile.in Makefile:Makefile.in ../make/$host/otp.mk:../make/otp.mk.in ../make/$host/otp_ded.mk:../make/otp_ded.mk.in ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in"
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
 # tests run on this system so they can be shared between configure
@@ -25574,12 +25567,10 @@ do
   "Makefile" ) CONFIG_FILES="$CONFIG_FILES Makefile:Makefile.in" ;;
   "../make/$host/otp.mk" ) CONFIG_FILES="$CONFIG_FILES ../make/$host/otp.mk:../make/otp.mk.in" ;;
   "../make/$host/otp_ded.mk" ) CONFIG_FILES="$CONFIG_FILES ../make/$host/otp_ded.mk:../make/otp_ded.mk.in" ;;
-  "../lib/ic/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/ic/c_src/$host/Makefile:../lib/ic/c_src/Makefile.in" ;;
   "../lib/os_mon/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in" ;;
   "../lib/ssl/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in" ;;
   "../lib/ssl/examples/certs/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in" ;;
   "../lib/crypto/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in" ;;
-  "../lib/orber/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in" ;;
   "../lib/runtime_tools/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in" ;;
   "../lib/tools/c_src/$host/Makefile" ) CONFIG_FILES="$CONFIG_FILES ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in" ;;
   "$host/config.h" ) CONFIG_HEADERS="$CONFIG_HEADERS $host/config.h:config.h.in" ;;
