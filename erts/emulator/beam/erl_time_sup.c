@@ -94,8 +94,6 @@ SysTimeval erts_first_emu_time; /* Used in erts_get_emu_time() */
 
 #ifdef HAVE_GETHRTIME
 
-int erts_disable_tolerant_timeofday;
-
 static SysHrTime hr_init_time, hr_last_correction_check, 
     hr_correction, hr_last_time;
 
