@@ -4117,7 +4117,6 @@ dnl
   ../lib/os_mon/c_src/$host/Makefile:../lib/os_mon/c_src/Makefile.in
   ../lib/ssl/c_src/$host/Makefile:../lib/ssl/c_src/Makefile.in
   ../lib/ssl/examples/certs/$host/Makefile:../lib/ssl/examples/certs/Makefile.in
-  ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in
   ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in
   ../lib/tools/c_src/$host/Makefile:../lib/tools/c_src/Makefile.in
   )
