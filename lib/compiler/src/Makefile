@@ -91,6 +91,7 @@ MODULES =  \
 	core_lint \
 	core_parse \
 	core_pp \
+	core_pp_simple \
 	core_scan \
 	erl_bifs \
 	rec_env \
@@ -236,6 +237,7 @@ $(EBIN)/core_lib.beam: core_parse.hrl
 $(EBIN)/core_lint.beam: core_parse.hrl
 $(EBIN)/core_parse.beam: core_parse.hrl $(EGEN)/core_parse.erl
 $(EBIN)/core_pp.beam: core_parse.hrl
+$(EBIN)/core_pp_simple.beam: core_parse.hrl
 $(EBIN)/sys_core_alias.beam: core_parse.hrl
 $(EBIN)/sys_core_bsm.beam: core_parse.hrl
 $(EBIN)/sys_core_fold.beam: core_parse.hrl

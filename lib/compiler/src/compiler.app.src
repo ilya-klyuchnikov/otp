@@ -66,6 +66,7 @@
 	     core_lint,
 	     core_parse,
 	     core_pp,
+		   core_pp_simple,
 	     core_lib,
 	     erl_bifs,
 	     rec_env,

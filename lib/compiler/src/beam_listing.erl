@@ -35,7 +35,8 @@
 
 module(File, #c_module{}=Core) ->
     %% This is a Core Erlang module.
-    io:put_chars(File, core_pp:format(Core));
+    % io:put_chars(File, core_pp:format(Core));
+    io:put_chars(File, core_pp_simple:format(Core));
 module(File, #b_module{name=Mod,exports=Exp,attributes=Attr,body=Fs}) ->
     %% This an SSA module.
     io:format(File, "module ~p.\n", [Mod]),
