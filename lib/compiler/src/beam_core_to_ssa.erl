@@ -123,7 +123,7 @@
 -record(cg_val_clause, {anno=[],val,body}).
 -record(cg_guard, {anno=[],clauses}).
 -record(cg_guard_clause, {guard,body}).
--record(cg_test, {op,args}).
+-record(cg_test, {anno=#{},op,args}).
 
 -record(cg_break, {args=[] :: [beam_ssa:value()],
                    phi :: label() | 'undefined'}).
@@ -252,11 +252,11 @@ guard(G0, Sub, St0) ->
 %%  Must enter try blocks and isets and find the last Kexpr in them.
 %%  This must end in a recognised BEAM test!
 
-gexpr_test(#b_set{op={bif,F},args=Args}, St) ->
+gexpr_test(#b_set{op={bif,F},args=Args,anno=Anno}, St) ->
     Ar = length(Args),
     true = erl_internal:new_type_test(F, Ar) orelse
         erl_internal:comp_op(F, Ar),            %Assertion
-    {#cg_test{op=F,args=Args},St};
+    {#cg_test{op=F,args=Args,anno=Anno},St};
 gexpr_test(#cg_try{arg=B0,vars=[#b_var{name=X}],body=#b_var{name=X},
                    handler=#b_literal{val=false}}=Try, St0) ->
     {B,St} = gexpr_test(B0, St0),
@@ -2719,8 +2719,8 @@ guard_cg(#cg_try{arg=Ts,vars=[],body=#cg_break{args=[]},
     {Tis,St2} = guard_cg(Ts, Fail, St1#cg{bfail=Fail,break=Next}),
     Is = Tis ++ [{label,Next},#cg_phi{vars=[]}],
     {Is,St2#cg{bfail=OldBfail,break=OldBreak}};
-guard_cg(#cg_test{op=Test,args=As}, Fail, St0) when is_atom(Test) ->
-    test_cg(Test, false, As, Fail, St0);
+guard_cg(#cg_test{op=Test,args=As,anno=Anno}, Fail, St0) when is_atom(Test) ->
+    test_cg(Test, false, As, Fail, St0, Anno);
 guard_cg(#cg_seq{arg=Arg,body=Body}, Fail, St0) ->
     {ArgIs,St1} = guard_cg(Arg, Fail, St0),
     {BodyIs,St} = guard_cg(Body, Fail, St1),
@@ -2728,15 +2728,15 @@ guard_cg(#cg_seq{arg=Arg,body=Body}, Fail, St0) ->
 guard_cg(G, _Fail, St) ->
     cg(G, St).
 
-test_cg('=/=', Inverted, As, Fail, St) ->
-    test_cg('=:=', not Inverted, As, Fail, St);
-test_cg('/=', Inverted, As, Fail, St) ->
-    test_cg('==', not Inverted, As, Fail, St);
-test_cg(Test, Inverted, As0, Fail, St0) ->
+test_cg('=/=', Inverted, As, Fail, St, Anno) ->
+    test_cg('=:=', not Inverted, As, Fail, St, Anno);
+test_cg('/=', Inverted, As, Fail, St, Anno) ->
+    test_cg('==', not Inverted, As, Fail, St, Anno);
+test_cg(Test, Inverted, As0, Fail, St0, Anno) ->
     As = ssa_args(As0, St0),
     {Succ,St} = new_label(St0),
     Bool = #b_var{name=Succ},
-    Bif = #b_set{op={bif,Test},dst=Bool,args=As},
+    Bif = #b_set{op={bif,Test},dst=Bool,args=As,anno=Anno},
     Br = case Inverted of
              false ->
                  #b_br{bool=Bool,succ=Succ,fail=Fail};
