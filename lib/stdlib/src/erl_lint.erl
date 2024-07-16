@@ -175,6 +175,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                behaviour=[],                    %Behaviour
                exports=gb_sets:empty()	:: gb_sets:set(fa()),%Exports
                imports=[] :: orddict:orddict(fa(), module()),%Imports
+               struct_imports=[] :: orddict:orddict(atom(), module()),
                compile=[],                      %Compile flags
                records=maps:new()               %Record definitions
                    :: #{atom() => {anno(),Fields :: term()}},
@@ -281,6 +282,8 @@ format_error_1({missing_qlc_hrl,A}) ->
     {~"qlc:q/~w called, but \"qlc.hrl\" not included", [A]};
 format_error_1({redefine_import,{{F,A},M}}) ->
     {~"function ~tw/~w already imported from ~w", [F,A,M]};
+format_error_1({redefine_struct_import,{S,M}}) ->
+    {~"struct ~tw already imported from ~w", [S,M]};
 format_error_1({bad_inline,{F,A}}) ->
     {~"inlined function ~tw/~w undefined", [F,A]};
 format_error_1({undefined_nif,{F,A}}) ->
@@ -412,10 +415,14 @@ format_error_1(illegal_map_construction) ->
 %% --- records ---
 format_error_1({undefined_record,T}) ->
     {~"record ~tw undefined", [T]};
+format_error_1({undefined_struct,T}) ->
+    {~"struct ~tw undefined", [T]};
 format_error_1({redefine_record,T}) ->
     {~"record ~tw already defined", [T]};
 format_error_1({redefine_field,T,F}) ->
     {~"field ~tw already defined in record ~tw", [F,T]};
+format_error_1({redefine_struct_field,F}) ->
+    {~"field ~tw already defined in struct", [F]};
 format_error_1(bad_multi_field_init) ->
     {~"'_' initializes no omitted fields", []};
 format_error_1({undefined_field,T,F}) ->
@@ -580,6 +587,12 @@ format_error_1({bad_dialyzer_attribute,Term}) ->
     {~"badly formed dialyzer attribute: ~tw", [Term]};
 format_error_1({bad_dialyzer_option,Term}) ->
     {~"unknown dialyzer warning option: ~tw", [Term]};
+format_error_1({struct_todo,init_fields}) ->
+    ~"struct initialization: TODO";
+format_error_1({struct_todo,update}) ->
+    ~"struct update: TODO";
+format_error_1({struct_todo,field_expr}) ->
+    ~"struct field: TODO";
 %% --- obsolete? unused? ---
 format_error_1({format_error, {Fmt, Args}}) ->
     {Fmt, Args}.
@@ -1012,6 +1025,8 @@ attribute_state({attribute,A,export_type,Es}, St) ->
     export_type(A, Es, St);
 attribute_state({attribute,A,import,Is}, St) ->
     import(A, Is, St);
+attribute_state({attribute,A,import_struct,Ss}, St) ->
+    import_struct(A, Ss, St);
 attribute_state({attribute,A,record,{Name,Fields}}, St) ->
     record_def(A, Name, Fields, St);
 attribute_state({attribute,Aa,behaviour,Behaviour}, St) ->
@@ -1795,6 +1810,27 @@ check_imports(_Anno, Fs, Is) ->
 add_imports(Mod, Fs, Is) ->
     foldl(fun (F, Is0) -> orddict:store(F, Mod, Is0) end, Is, Fs).
 
+import_struct(Anno, {Mod, Ss}, St00) ->
+  St = check_module_name(Mod, Anno, St00),
+  Mss = ordsets:from_list(Ss),
+  case check_struct_imports(Anno, Mss, St#lint.struct_imports) of
+    [] ->
+      St#lint{struct_imports = add_struct_imports(Mod, Mss, St#lint.struct_imports)};
+    Es ->
+      foldl(fun(E, St0) -> add_error(Anno, {redefine_struct_import, E}, St0) end, St, Es)
+  end.
+
+check_struct_imports(_Anno, Ss, Is) ->
+  foldl(fun (S, Efs) ->
+    case orddict:find(S, Is) of
+      {ok,Mod} -> [{S,Mod}|Efs];
+      error -> Efs
+    end
+        end, [], Ss).
+
+add_struct_imports(Mod, Ss, Is) ->
+  foldl(fun (S, Is0) -> orddict:store(S, Mod, Is0) end, Is, Ss).
+
 -spec imported(atom(), arity(), lint_state()) -> {'yes',module()} | 'no'.
 
 imported(F, A, St) ->
@@ -1969,6 +2005,11 @@ pattern({record,Anno,Name,Pfs}, Vt, Old, St) ->
             pattern_fields(Pfs, Name, Fields, Vt, Old, St2);
         error -> {[],[],add_error(Anno, {undefined_record,Name}, St)}
     end;
+pattern({struct, _Anno, {_Mod, _Name}, Fs}, Vt, Old, St) ->
+  pattern_struct_fields(Fs, Vt, Old, St);
+pattern({struct, Anno, Name, Fs}, Vt, Old, St) when is_atom(Name) ->
+  St1 = call_struct(Anno, Name, St),
+  pattern_struct_fields(Fs, Vt, Old, St1);
 pattern({bin,_,Fs}, Vt, Old, St) ->
     pattern_bin(Fs, Vt, Old, St);
 pattern({op,_Anno,'++',{nil,_},R}, Vt, Old, St) ->
@@ -2324,6 +2365,13 @@ gexpr({record,Anno,Name,Inits}, Vt, St) ->
                  fun (Dfs, St1) ->
                          ginit_fields(Inits, Anno, Name, Dfs, Vt, St1)
                  end);
+gexpr({struct_field_expr, _Anno, Str, {_MName,_Name}, FieldName}, Vt, St0) when is_atom(FieldName) ->
+  {Rvt,St1} = gexpr(Str, Vt, St0),
+  {Rvt,St1};
+gexpr({struct_field_expr, Anno, Str, Name, FieldName}, Vt, St0) when is_atom(FieldName) ->
+  St1 = call_struct(Anno, Name, St0),
+  {Rvt,St2} = gexpr(Str, Vt, St1),
+  {Rvt,St2};
 gexpr({bin,_Anno,Fs}, Vt,St) ->
     expr_bin(Fs, Vt, St, fun gexpr/3);
 gexpr({call,_Anno,{atom,_Ar,is_record},[E,{atom,An,Name}]}, Vt, St0) ->
@@ -2344,12 +2392,27 @@ gexpr({call,Anno,{atom,_Ar,is_record},[E0,{atom,_,_Name},{integer,_,_}]},
 	false ->
 	    {E,add_error(Anno, {illegal_guard_local_call,{is_record,3}}, St1)}
     end;
+gexpr({call,Anno,{atom,_Ar,is_tagged_struct},[E0,{atom,_,_M},{atom,_,_N}]},
+    Vt, St0) ->
+  {E,St1} = gexpr(E0, Vt, St0),
+  case no_guard_bif_clash(St0, {is_record,3}) of
+    true ->
+      {E,St1};
+    false ->
+      {E,add_error(Anno, {illegal_guard_local_call,{is_record,3}}, St1)}
+  end;
 gexpr({call,Anno,{atom,_Ar,is_record},[_,_,_]=Asvt0}, Vt, St0) ->
     {Asvt,St1} = gexpr_list(Asvt0, Vt, St0),
     {Asvt,add_error(Anno, illegal_guard_expr, St1)};
+gexpr({call,Anno,{atom,_Ar,is_tagged_struct},[_,_,_]=Asvt0}, Vt, St0) ->
+  {Asvt,St1} = gexpr_list(Asvt0, Vt, St0),
+  {Asvt,add_error(Anno, illegal_guard_expr, St1)};
 gexpr({call,Anno,{remote,_,{atom,_,erlang},{atom,_,is_record}=Isr},[_,_,_]=Args},
       Vt, St0) ->
     gexpr({call,Anno,Isr,Args}, Vt, St0);
+gexpr({call,Anno,{remote,_,{atom,_,erlang},{atom,_,is_tagged_struct}=Ists},[_,_,_]=Args},
+    Vt, St0) ->
+  gexpr({call,Anno,Ists,Args}, Vt, St0);
 gexpr({call,Anno,{atom,_Aa,F},As}, Vt, St0) ->
     {Asvt,St1} = gexpr_list(As, Vt, St0),
     A = length(As),
@@ -2500,6 +2563,8 @@ is_gexpr({record_index,_A,_Name,Field}, Info) ->
     is_gexpr(Field, Info);
 is_gexpr({record_field,_A,Rec,_Name,Field}, Info) ->
     is_gexpr_list([Rec,Field], Info);
+is_gexpr({struct_field_expr,_A,Str,_Name,_FieldName}, Info) ->
+  is_gexpr(Str, Info);
 is_gexpr({record,A,Name,Inits}, Info0) ->
     Info = case Info0 of
                {#{},_} ->
@@ -2609,6 +2674,30 @@ expr({record,Anno,Name,Inits}, Vt, St) ->
                  fun (Dfs, St1) ->
                          init_fields(Inits, Anno, Name, Dfs, Vt, St1)
                  end);
+expr({struct, _Anno, {MName, Name}, Inits}, Vt, St) when is_atom(MName),is_atom(Name) ->
+  {Usvt, St1} = check_struct_fields(Inits, Vt, St),
+  {Usvt, St1};
+expr({struct, Anno, Name, Inits}, Vt, St) when is_atom(Name) ->
+  {Usvt, St1} = check_struct_fields(Inits, Vt, St),
+  St2 = call_struct(Anno, Name, St1),
+  {Usvt, St2};
+expr({struct_update, _Anno, Expr, {MName, Name}, Updates}, Vt, St) when is_atom(MName),is_atom(Name) ->
+  {Rvt, St1} = expr(Expr, Vt, St),
+  {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
+  Usvt1 = vtmerge(Rvt, Usvt),
+  {Usvt1, St2};
+expr({struct_update, Anno, Expr, Name, Updates}, Vt, St) when is_atom(Name) ->
+  {Rvt, St1} = expr(Expr, Vt, St),
+  {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
+  Usvt1 = vtmerge(Rvt, Usvt),
+  St3 = call_struct(Anno, Name, St2),
+  {Usvt1, St3};
+expr({struct_field_expr, _Anno, Str, {_MName,_Name}, FieldName}, Vt, St) when is_atom(FieldName) ->
+  expr(Str, Vt, St);
+expr({struct_field_expr, Anno, Str, Name, FieldName}, Vt, St) when is_atom(Name),is_atom(FieldName) ->
+  {Usvt, St1} = expr(Str, Vt, St),
+  St2 = call_struct(Anno, Name, St1),
+  {Usvt, St2};
 expr({record_field,Anno,Rec,Name,Field}, Vt, St0) ->
     {Rvt,St1} = record_expr(Anno, Rec, Vt, St0),
     {Fvt,St2} = check_record(Anno, Name, St1,
@@ -2999,6 +3088,12 @@ check_record(Anno, Name, St, CheckFun) ->
         error -> {[],add_error(Anno, {undefined_record,Name}, St)}
     end.
 
+call_struct(Anno, Name, St) ->
+  case orddict:find(Name, St#lint.struct_imports) of
+    {ok, _} -> St;
+    error -> add_error(Anno, {undefined_struct,Name}, St)
+  end.
+
 used_record(Name, #lint{usage=Usage}=St) ->
     UsedRecs = gb_sets:add_element(Name, Usage#usage.used_records),
     St#lint{usage = Usage#usage{used_records=UsedRecs}}.
@@ -3069,6 +3164,41 @@ pattern_fields(Fs, Name, Fields, Vt0, Old, St0) ->
                       end
               end, {[],[],[],St0}, Fs),
     {Uvt,Unew,St1}.
+
+pattern_struct_fields(Fs, Vt0, Old, St0) ->
+  CheckFun = fun (Val, Vt, St) -> pattern(Val, Vt, Old, St) end,
+  {_SeenFields,Uvt,Unew,St1} =
+    foldl(fun (Field, {Sfsa,Vta,Newa,Sta}) ->
+      case check_struct_field(Field, Vt0, Sta, Sfsa, CheckFun) of
+        {Sfsb,{Vtb,Stb}} ->
+          {Vt, St1} = vtmerge_pat(Vta, Vtb, Stb),
+          {Sfsb, Vt, [], St1};
+        {Sfsb,{Vtb,Newb,Stb}} ->
+          {Vt, Mst0} = vtmerge_pat(Vta, Vtb, Stb),
+          {New, Mst} = vtmerge_pat(Newa, Newb, Mst0),
+          {Sfsb, Vt, New, Mst}
+      end
+          end, {[],[],[],St0}, Fs),
+  {Uvt,Unew,St1}.
+
+check_struct_fields(Fs, Vt0, St0) ->
+  CheckFun = fun expr/3,
+  {_SeenFields,Uvt,St1} =
+    foldl(
+      fun (Field, {Sfsa,Vta,Sta}) ->
+        {Sfsb,{Vtb,Stb}} = check_struct_field(Field, Vt0, Sta, Sfsa, CheckFun),
+        {Vt1, St1} = vtmerge_pat(Vta, Vtb, Stb),
+        {Sfsb, Vt1, St1}
+      end,
+      {[],[], St0},
+      Fs),
+  {Uvt,St1}.
+
+check_struct_field({struct_field, Af, F, Val}, Vt, St, Sfs, CheckFun) ->
+  case member(F, Sfs) of
+    true -> {Sfs, {[], add_error(Af, {redefine_struct_field, F}, St)}};
+    false -> {[F|Sfs],CheckFun(Val, Vt, St)}
+  end.
 
 %% record_field(Field, RecordName, [RecDefField], State) ->
 %%      {UpdVarTable,State}.
