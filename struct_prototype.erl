@@ -23,3 +23,9 @@ read(_Object, _Key) ->
 
 is(_Object, _Module, _Name, _Arity) ->
     erlang:nif_error().
+
+name(_Object) ->
+    erlang:nif_error().
+
+module(_Object) ->
+    erlang:nif_error().

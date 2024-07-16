@@ -562,3 +562,37 @@ BIF_RETTYPE struct_prototype_is_4(BIF_ALIST_4) {
 
     BIF_RET(am_false);
 }
+
+BIF_RETTYPE struct_prototype_module_1(BIF_ALIST_1) {
+    Eterm obj, *objp;
+    ErtsStructDefinition *defp;
+    ErtsStructEntry *entry;
+
+    obj = BIF_ARG_1;
+    if (!is_struct(obj)) {
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    objp = struct_val(obj);
+
+    defp = (ErtsStructDefinition*)boxed_val(objp[1]);
+    entry = (ErtsStructEntry*)unsigned_val(defp->entry);
+
+    BIF_RET(entry->module);
+}
+
+BIF_RETTYPE struct_prototype_name_1(BIF_ALIST_1) {
+    Eterm obj, *objp;
+    ErtsStructDefinition *defp;
+    ErtsStructEntry *entry;
+
+    obj = BIF_ARG_1;
+    if (!is_struct(obj)) {
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    objp = struct_val(obj);
+
+    defp = (ErtsStructDefinition*)boxed_val(objp[1]);
+    entry = (ErtsStructEntry*)unsigned_val(defp->entry);
+
+    BIF_RET(entry->name);
+}

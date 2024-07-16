@@ -2,6 +2,8 @@
 
 -export([main/0]).
 
+% ./bin/erl -noshell -eval 'struct_example:main()'
+
 main() ->
     struct_prototype:define(a,b,{{field1,1},{field2,2}}),
     Obj = struct_prototype:create(a,b,2),
@@ -22,4 +24,5 @@ main() ->
 
     erlang:display(io_lib_format:fwrite("~p_~p", [Test1, Test2])),
     erlang:display(io_lib_format:fwrite("~p", [Obj])),
+    erlang:display({struct_prototype:module(Obj), struct_prototype:name(Obj)}),
     halt(0).
