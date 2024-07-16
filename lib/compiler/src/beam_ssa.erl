@@ -217,6 +217,7 @@ no_side_effect(#b_set{op=Op}) ->
         get_hd -> true;
         get_tl -> true;
         get_map_element -> true;
+        get_struct_element -> true;
         get_tuple_element -> true;
         has_map_field -> true;
         is_nonempty_list -> true;

@@ -481,7 +481,7 @@ A list of binaries. This datatype is useful to use together with
          is_atom/1, is_binary/1, is_bitstring/1, is_boolean/1,
          is_float/1, is_function/1, is_function/2, is_integer/1,
          is_list/1, is_map/1, is_number/1, is_pid/1, is_port/1, is_record/2,
-         is_record/3, is_reference/1, is_tuple/1, load_module/2,
+         is_record/3, is_reference/1, is_struct/1, is_tagged_struct/3, is_tuple/1, load_module/2,
          load_nif/2, localtime_to_universaltime/2, make_fun/3,
          make_tuple/2, make_tuple/3, open_port/2,
          port_call/2, port_call/3, port_info/1, port_info/2, process_flag/2,
@@ -6821,6 +6821,16 @@ Returns `true` if `Term` is a reference, otherwise `false`.
       Term :: term().
 is_reference(_Term) ->
     erlang:nif_error(undefined).
+
+-spec is_struct(Term) -> boolean() when
+      Term :: term().
+is_struct(_Term) ->
+    erlang:nif_error(undefined).
+
+-spec is_tagged_struct(Term, module(), atom()) -> boolean() when
+    Term :: term().
+is_tagged_struct(_Term, _Module, _Name) ->
+  erlang:nif_error(undefined).
 
 %% Shadowed by erl_bif_types: erlang:is_tuple/1
 -doc """

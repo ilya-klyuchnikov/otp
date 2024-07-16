@@ -148,6 +148,8 @@ function `type/1`.
 -type c_literal() :: #c_literal{}.
 -type c_map()     :: #c_map{}.
 -type c_map_pair() :: #c_map_pair{}.
+-type c_struct()  :: #c_struct{}.
+-type c_struct_pair() :: #c_struct_pair{}.
 -type c_module()  :: #c_module{}.
 -type c_opaque()  :: #c_opaque{}.
 -type c_primop()  :: #c_primop{}.
@@ -161,7 +163,7 @@ function `type/1`.
 -type cerl() :: c_alias()  | c_apply()  | c_binary()  | c_bitstr()
               | c_call()   | c_case()   | c_catch()   | c_clause()  | c_cons()
               | c_fun()    | c_let()    | c_letrec()  | c_literal()
-	      | c_map()    | c_map_pair()
+	      | c_map()    | c_map_pair() | c_struct() | c_struct_pair()
 	      | c_module() | c_opaque()
               | c_primop() | c_receive() | c_seq()
               | c_try()    | c_tuple()  | c_values()  | c_var().
@@ -262,7 +264,8 @@ type(#c_try{}) -> 'try';
 type(#c_tuple{}) -> tuple;
 type(#c_values{}) -> values;
 type(#c_var{}) -> var;
-type(#c_opaque{}) -> opaque.
+type(#c_opaque{}) -> opaque;
+type(#c_struct{}) -> struct.
 
 -doc """
 Returns `true` if `Node` is a leaf node, otherwise `false`.
