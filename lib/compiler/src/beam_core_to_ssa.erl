@@ -99,6 +99,8 @@
 -record(cg_tuple, {es,keep=ordsets:new()}).
 -record(cg_map, {var=#b_literal{val=#{}},op,es}).
 -record(cg_map_pair, {key,val}).
+-record(cg_struct, {id, es}).
+-record(cg_struct_pair, {key,val}).
 -record(cg_cons, {hd,tl}).
 -record(cg_binary, {segs}).
 -record(cg_bin_end, {}).
@@ -431,6 +433,9 @@ expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, St0) ->
         is_record ->
             {Args,Ap,St} = atomic_list(Cargs, Sub, St0),
             {#cg_internal{anno=internal_anno(A),op=is_record,args=Args},Ap,St};
+        is_tagged_struct ->
+            {Args,Ap,St} = atomic_list(Cargs, Sub, St0),
+            {#cg_internal{anno=internal_anno(A),op=is_tagged_struct,args=Args},Ap,St};
         error ->
             %% Invalid call (e.g. M:42/3). Issue a warning, and let
             %% the generated code call apply/3.
@@ -905,6 +910,12 @@ pattern(#c_tuple{es=Ces}, Sub0, St0) ->
 pattern(#c_map{es=Ces}, Sub0, St0) ->
     {Kes,Sub1,St1} = pattern_map_pairs(Ces, Sub0, St0),
     {#cg_map{op=exact,es=Kes},Sub1,St1};
+pattern(#c_struct{id = {M, N}, es=Ces}, Sub0, St0) ->
+    {Kes,Sub1,St1} = pattern_struct_pairs(Ces, Sub0, St0),
+    {#cg_struct{id = {M, N}, es=Kes},Sub1,St1};
+pattern(#c_struct{id = {}, es=Ces}, Sub0, St0) ->
+    {Kes,Sub1,St1} = pattern_struct_pairs(Ces, Sub0, St0),
+    {#cg_struct{id = {}, es=Kes},Sub1,St1};
 pattern(#c_binary{segments=Cv}, Sub0, St0) ->
     {Kv,Sub1,St1} = pattern_bin(Cv, Sub0, St0),
     {#cg_binary{segs=Kv},Sub1,St1};
@@ -935,6 +946,14 @@ pattern_map_pairs(Ces0, Sub0, St0) ->
                         erts_internal:cmp_term(A, B) < 0
                 end, Kes),
     {Kes1,Sub1,St1}.
+
+pattern_struct_pairs(Ces0, Sub0, St0) ->
+    {Kes,{Sub1,St1}} =
+        mapfoldl(fun(#c_struct_pair{key=K,val=Cv},{Subi0,Sti0}) ->
+            {Kv,Subi1,Sti1} = pattern(Cv, Subi0, Sti0),
+            {#cg_struct_pair{key=K,val=Kv},{Subi1,Sti1}}
+                 end, {Sub0, St0}, Ces0),
+    {Kes,Sub1,St1}.
 
 -spec pattern_bin([cerl:c_bitstr()], sub(), state()) -> {#cg_bin_seg{} | #cg_bin_end{}, sub(), state()}.
 pattern_bin([#c_bitstr{val=E0,size=S0,unit=U0,type=T,flags=Fs0}|Es0],
@@ -1193,6 +1212,7 @@ call_type(#c_literal{val=M}, #c_literal{val=F}, As, St) when is_atom(M), is_atom
                 {erlang,min,true} -> call;
                 {erlang,max,true} -> call;
                 {erlang,is_record,_} when length(As) =:= 3 -> is_record;
+                {erlang,is_tagged_struct,_} when length(As) =:= 3 -> is_tagged_struct;
                 {erlang,_,_} -> bif
             end
     end;
@@ -1214,6 +1234,14 @@ is_guard_bif(erlang, is_record, [_,Tag,Sz]) ->
         {_,_} ->
             false
     end;
+is_guard_bif(erlang, is_tagged_struct, [_,Mod,Name]) ->
+  case {Mod,Name} of
+    {#c_literal{val=M},#c_literal{val=N}}
+      when is_atom(M), is_atom(N) ->
+      true;
+    {_,_} ->
+      false
+  end;
 is_guard_bif(erlang, N, As) ->
     Arity = length(As),
     case erl_internal:guard_bif(N, Arity) of
@@ -1369,7 +1397,7 @@ match_var([U|Us], Cs0, Def, St) ->
 -spec match_con([beam_ssa:b_var()], [#iclause{}], todo(), state()) -> {kexpr(), state()}.
 match_con([U|_Us]=L, Cs, Def, St0) ->
     %% Extract clauses for different constructors (types).
-    Ttcs0 = select_types(Cs, [], [], [], [], [], [], [], [], []),
+    Ttcs0 = select_types(Cs, [], [], [], [], [], [], [], [], [], []),
     Ttcs1 = [{T, Types} || {T, [_ | _] = Types} <- Ttcs0],
     Ttcs = opt_single_valued(Ttcs1),
     {Scs,St1} =
@@ -1380,32 +1408,34 @@ match_con([U|_Us]=L, Cs, Def, St0) ->
                  St0, Ttcs),
     {build_alt(build_select(U, Scs), Def),St1}.
 
--spec select_types([#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}]) -> [{con() | {bif, atom()}, [#iclause{}]}].
-select_types([NoExpC|Cs], Bin, BinCon, Cons, Tuple, Map, Atom, Float, Int, Nil) ->
+-spec select_types([#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}]) -> [{con() | {bif, atom()}, [#iclause{}]}].
+select_types([NoExpC|Cs], Bin, BinCon, Cons, Tuple, Map, Atom, Float, Int, Nil, Struct) ->
     C = expand_pat_lit_clause(NoExpC),
     case clause_con(C) of
         cg_binary ->
-            select_types(Cs, [C|Bin], BinCon, Cons, Tuple, Map, Atom, Float, Int, Nil);
+            select_types(Cs, [C|Bin], BinCon, Cons, Tuple, Map, Atom, Float, Int, Nil, Struct);
         cg_bin_seg ->
-            select_types(Cs, Bin, [C|BinCon], Cons, Tuple, Map, Atom, Float, Int, Nil);
+            select_types(Cs, Bin, [C|BinCon], Cons, Tuple, Map, Atom, Float, Int, Nil, Struct);
         cg_bin_end ->
-            select_types(Cs, Bin, [C|BinCon], Cons, Tuple, Map, Atom, Float, Int, Nil);
+            select_types(Cs, Bin, [C|BinCon], Cons, Tuple, Map, Atom, Float, Int, Nil, Struct);
         cg_cons ->
-            select_types(Cs, Bin, BinCon, [C|Cons], Tuple, Map, Atom, Float, Int, Nil);
+            select_types(Cs, Bin, BinCon, [C|Cons], Tuple, Map, Atom, Float, Int, Nil, Struct);
         cg_tuple ->
-            select_types(Cs, Bin, BinCon, Cons, [C|Tuple], Map, Atom, Float, Int, Nil);
+            select_types(Cs, Bin, BinCon, Cons, [C|Tuple], Map, Atom, Float, Int, Nil, Struct);
         cg_map ->
-            select_types(Cs, Bin, BinCon, Cons, Tuple, [C|Map], Atom, Float, Int, Nil);
+            select_types(Cs, Bin, BinCon, Cons, Tuple, [C|Map], Atom, Float, Int, Nil, Struct);
         cg_nil ->
-            select_types(Cs, Bin, BinCon, Cons, Tuple, Map, Atom, Float, Int, [C|Nil]);
+            select_types(Cs, Bin, BinCon, Cons, Tuple, Map, Atom, Float, Int, [C|Nil], Struct);
         cg_atom ->
-            select_types(Cs, Bin, BinCon, Cons, Tuple, Map, [C|Atom], Float, Int, Nil);
+            select_types(Cs, Bin, BinCon, Cons, Tuple, Map, [C|Atom], Float, Int, Nil, Struct);
         cg_float ->
-            select_types(Cs, Bin, BinCon, Cons, Tuple, Map, Atom, [C|Float], Int, Nil);
+            select_types(Cs, Bin, BinCon, Cons, Tuple, Map, Atom, [C|Float], Int, Nil, Struct);
         cg_int ->
-            select_types(Cs, Bin, BinCon, Cons, Tuple, Map, Atom, Float, [C|Int], Nil)
+            select_types(Cs, Bin, BinCon, Cons, Tuple, Map, Atom, Float, [C|Int], Nil, Struct);
+        cg_struct ->
+            select_types(Cs, Bin, BinCon, Cons, Tuple, Map, Atom, Float, Int, Nil, [C|Struct])
     end;
-select_types([], Bin, BinCon, Cons, Tuple, Map, Atom, Float, Int, Nil) ->
+select_types([], Bin, BinCon, Cons, Tuple, Map, Atom, Float, Int, Nil, Struct) ->
     [{cg_binary, reverse(Bin)}] ++ handle_bin_con(reverse(BinCon)) ++
         [
          {cg_cons, reverse(Cons)},
@@ -1414,7 +1444,8 @@ select_types([], Bin, BinCon, Cons, Tuple, Map, Atom, Float, Int, Nil) ->
          {{bif,is_atom}, reverse(Atom)},
          {{bif,is_float}, reverse(Float)},
          {{bif,is_integer}, reverse(Int)},
-         {cg_nil, reverse(Nil)}
+         {cg_nil, reverse(Nil)},
+         {cg_struct, reverse(Struct)}
         ].
 
 -spec expand_pat_lit_clause(#iclause{}) -> #iclause{}.
@@ -1920,6 +1951,14 @@ get_match(#cg_map{op=exact,es=Es0}, St0) ->
                               {Pair#cg_map_pair{val=V},Vs}
                       end, Mes, Es0),
     {#cg_map{op=exact,es=Es},Mes,St1};
+get_match(#cg_struct{id=Id, es=Es0}, St0) ->
+    {Mes,St1} = new_vars(length(Es0), St0),
+    F =
+      fun(#cg_struct_pair{}=Pair, [V|Vs]) ->
+        {Pair#cg_struct_pair{val=V},Vs}
+      end,
+    {Es,_} = mapfoldl(F, Mes, Es0),
+    {#cg_struct{id=Id,es=Es},Mes,St1};
 get_match(M, St) ->
     {M,[],St}.
 
@@ -1939,6 +1978,9 @@ new_clauses(Cs, #b_var{name=U}) ->
                                [N|As];
                            #cg_map{op=exact,es=Es} ->
                                Vals = [V || #cg_map_pair{val=V} <:- Es],
+                               Vals ++ As;
+                           #cg_struct{es=Es} ->
+                               Vals = [V || #cg_struct_pair{val=V} <- Es],
                                Vals ++ As;
                            _Other ->
                                As
@@ -2156,6 +2198,7 @@ arg_con(Arg) ->
         #cg_cons{} -> cg_cons;
         #cg_tuple{} -> cg_tuple;
         #cg_map{} -> cg_map;
+        #cg_struct{} -> cg_struct;
         #cg_binary{} -> cg_binary;
         #cg_bin_end{} -> cg_bin_end;
         #cg_bin_seg{} -> cg_bin_seg;
@@ -2188,7 +2231,9 @@ arg_val(Arg, C) ->
                          %% Literals will sort before variables
                          %% as intended.
                          erts_internal:cmp_term(A, B) < 0
-                 end, [Key || #cg_map_pair{key=Key} <:- Es])
+                 end, [Key || #cg_map_pair{key=Key} <:- Es]);
+        #cg_struct{id = Id, es=Es} ->
+            {Id, sort([K || #cg_struct_pair{key = K} <:- Es])}
     end.
 
 %%%
@@ -2614,7 +2659,12 @@ pat_vars(#cg_map{es=Es}) ->
 pat_vars(#cg_map_pair{key=K,val=V}) ->
     {U1,New} = pat_vars(V),
     {[],U2} = pat_vars(K),
-    {union(U1, U2),New}.
+    {union(U1, U2),New};
+pat_vars(#cg_struct{es=Es}) ->
+    pat_list_vars(Es);
+pat_vars(#cg_struct_pair{val=V}) ->
+    {U1,New} = pat_vars(V),
+    {U1,New}.
 
 -spec pat_list_vars([todo()]) -> {[beam_ssa:var_name()], [beam_ssa:var_name()]}.
 pat_list_vars(Ps) ->
@@ -2817,6 +2867,8 @@ select_cg(cg_bin_end, [S], Var, Tf, _Vf, St) ->
     select_bin_end(S, Var, Tf, St);
 select_cg(cg_map, Vs, Var, Tf, Vf, St) ->
     select_map(Vs, Var, Tf, Vf, St);
+select_cg(cg_struct, Vs, Var, Tf, Vf, St) ->
+    select_struct(Vs, Var, Tf, Vf, St);
 select_cg(cg_cons, [S], Var, Tf, Vf, St) ->
     select_cons(S, Var, Tf, Vf, St);
 select_cg(cg_nil, [_]=Vs, Var, Tf, Vf, St) ->
@@ -3082,6 +3134,34 @@ select_extract_map([P|Ps], MapSrc, Fail, St0) ->
 select_extract_map([], _, _, St) ->
     {[],St}.
 
+select_struct(Scs, StructSrc, Tf, Vf, St0) ->
+    F =
+      fun(#cg_val_clause{val=#cg_struct{id=Id,es=Es}, body=B}, Fail, St1) ->
+        select_struct_val(StructSrc, Id, Es, B, Fail, St1)
+      end,
+    {Is,St1} = match_fmf(F, Vf, St0, Scs),
+    {TestIs,St} = make_cond_branch({bif,is_struct}, [StructSrc], Tf, St1),
+    {TestIs++Is,St}.
+
+select_struct_val(StrSrc, {M, N}, Es, B, Fail, St0) ->
+    {TestIs,St1} = make_cond_branch({bif,is_tagged_struct}, [StrSrc, #b_literal{val = M}, #b_literal{val = N}], Fail, St0),
+    {Eis,St2} = select_extract_struct(Es, StrSrc, Fail, St1),
+    {Bis,St3} = match_cg(B, Fail, St2),
+    {TestIs++Eis++Bis,St3};
+select_struct_val(StrSrc, {}, Es, B, Fail, St0) ->
+    {Eis,St1} = select_extract_struct(Es, StrSrc, Fail, St0),
+    {Bis,St2} = match_cg(B, Fail, St1),
+    {Eis++Bis,St2}.
+
+select_extract_struct([P|Ps], StrSrc, Fail, St0) ->
+    #cg_struct_pair{key=Key,val=Dst} = P,
+    Set = #b_set{op=get_struct_element,dst=Dst,args=[StrSrc,#b_literal{val = Key}]},
+    {TestIs,St1} = make_succeeded(Dst, {guard,Fail}, St0),
+    {Is,St} = select_extract_struct(Ps, StrSrc, Fail, St1),
+    {[Set|TestIs]++Is,St};
+select_extract_struct([], _, _, St) ->
+    {[],St}.
+
 guard_clause_cg(#cg_guard_clause{guard=G,body=B}, Fail, St0) ->
     {Gis,St1} = guard_cg(G, Fail, St0),
     {Bis,St} = match_cg(B, Fail, St1),
@@ -3226,6 +3306,23 @@ internal_cg(_Anno, is_record, [Tuple,TagVal,ArityVal], [Dst], St0) ->
            #cg_phi{vars=[Dst]}],
     Is = Is0 ++ [GetArity] ++ Is1 ++ [GetTag] ++ Is2 ++ Is3,
     {Is,St};
+internal_cg(_Anno, is_tagged_struct, [Struct,ModVal,NameVal], [Dst], St0) ->
+  {Name,St1} = new_ssa_var(St0),
+  {Module,St2} = new_ssa_var(St1),
+  {Phi,St3} = new_label(St2),
+  {False,St4} = new_label(St3),
+  {Is0,St5} = make_cond_branch({bif,is_struct}, [Struct], False, St4),
+  GetArity = #b_set{op={bif,struct_name},dst=Name,args=[Struct]},
+  {Is1,St6} = make_cond_branch({bif,'=:='}, [Name,NameVal], False, St5),
+  GetModule = #b_set{op={bif,struct_module},dst=Module, args=[Struct]},
+  {Is2,St} = make_cond_branch({bif,'=:='}, [Module,ModVal], False, St6),
+  Is3 = [#cg_break{args=[#b_literal{val=true}],phi=Phi},
+    {label,False},
+    #cg_break{args=[#b_literal{val=false}],phi=Phi},
+    {label,Phi},
+    #cg_phi{vars=[Dst]}],
+  Is = Is0 ++ [GetArity] ++ Is1 ++ [GetModule] ++ Is2 ++ Is3,
+  {Is,St};
 internal_cg(Anno, recv_peek_message, [], [#b_var{name=Succeeded0},
                                           #b_var{}=Dst], St0) ->
     St = new_succeeded_value(Succeeded0, Dst, St0),
