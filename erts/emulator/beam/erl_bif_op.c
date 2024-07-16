@@ -326,3 +326,11 @@ BIF_RETTYPE is_map_1(BIF_ALIST_1)
     }
     BIF_RET(am_false);
 }
+
+BIF_RETTYPE is_struct_1(BIF_ALIST_1)
+{
+    if (is_struct(BIF_ARG_1)) {
+        BIF_RET(am_true);
+    }
+    BIF_RET(am_false);
+}
