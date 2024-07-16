@@ -416,6 +416,8 @@ format_error_1({redefine_record,T}) ->
     {~"record ~tw already defined", [T]};
 format_error_1({redefine_field,T,F}) ->
     {~"field ~tw already defined in record ~tw", [F,T]};
+format_error_1({redefine_struct_field,F}) ->
+    {~"field ~tw already defined in struct", [F]};
 format_error_1(bad_multi_field_init) ->
     {~"'_' initializes no omitted fields", []};
 format_error_1({undefined_field,T,F}) ->
@@ -580,6 +582,14 @@ format_error_1({bad_dialyzer_attribute,Term}) ->
     {~"badly formed dialyzer attribute: ~tw", [Term]};
 format_error_1({bad_dialyzer_option,Term}) ->
     {~"unknown dialyzer warning option: ~tw", [Term]};
+format_error_1({struct_todo,init_fields}) ->
+    ~"struct initialization: TODO";
+format_error_1({struct_todo,update}) ->
+    ~"struct update: TODO";
+format_error_1({struct_todo,import}) ->
+    ~"struct import: TODO";
+format_error_1({struct_todo,field_expr}) ->
+    ~"struct field: TODO";
 %% --- obsolete? unused? ---
 format_error_1({format_error, {Fmt, Args}}) ->
     {Fmt, Args}.
@@ -1969,6 +1979,8 @@ pattern({record,Anno,Name,Pfs}, Vt, Old, St) ->
             pattern_fields(Pfs, Name, Fields, Vt, Old, St2);
         error -> {[],[],add_error(Anno, {undefined_record,Name}, St)}
     end;
+pattern({struct, _Anno, {_Mod, _Name}, Fs}, Vt, Old, St) ->
+  pattern_struct_fields(Fs, Vt, Old, St);
 pattern({bin,_,Fs}, Vt, Old, St) ->
     pattern_bin(Fs, Vt, Old, St);
 pattern({op,_Anno,'++',{nil,_},R}, Vt, Old, St) ->
@@ -2609,6 +2621,21 @@ expr({record,Anno,Name,Inits}, Vt, St) ->
                  fun (Dfs, St1) ->
                          init_fields(Inits, Anno, Name, Dfs, Vt, St1)
                  end);
+expr({struct, _Anno, {MName, Name}, Inits}, Vt, St) when is_atom(MName),is_atom(Name) ->
+  {Usvt, St1} = check_struct_fields(Inits, Vt, St),
+  {Usvt, St1};
+expr({struct, Anno, Name, _Inits}, _Vt, St) when is_atom(Name) ->
+  {[],add_error(Anno, {struct_todo,import}, St)};
+expr({struct_update, _Anno, Expr, {MName, Name}, Updates}, Vt, St) when is_atom(MName),is_atom(Name) ->
+  {Rvt, St1} = expr(Expr, Vt, St),
+  {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
+  {vtmerge(Rvt, Usvt), St2};
+expr({struct_update, Anno, _Expr, Name, _Updates}, _Vt, St) when is_atom(Name) ->
+  {[],add_error(Anno, {struct_todo,import}, St)};
+expr({struct_field_expr, _Anno, Str, {_MName,_Name}, FieldName}, Vt, St) when is_atom(FieldName) ->
+  expr(Str, Vt, St);
+expr({struct_field_expr, Anno, _S, Name, FieldName}, _Vt, St) when is_atom(Name),is_atom(FieldName) ->
+  {[],add_error(Anno, {struct_todo,import}, St)};
 expr({record_field,Anno,Rec,Name,Field}, Vt, St0) ->
     {Rvt,St1} = record_expr(Anno, Rec, Vt, St0),
     {Fvt,St2} = check_record(Anno, Name, St1,
@@ -3069,6 +3096,41 @@ pattern_fields(Fs, Name, Fields, Vt0, Old, St0) ->
                       end
               end, {[],[],[],St0}, Fs),
     {Uvt,Unew,St1}.
+
+pattern_struct_fields(Fs, Vt0, Old, St0) ->
+  CheckFun = fun (Val, Vt, St) -> pattern(Val, Vt, Old, St) end,
+  {_SeenFields,Uvt,Unew,St1} =
+    foldl(fun (Field, {Sfsa,Vta,Newa,Sta}) ->
+      case check_struct_field(Field, Vt0, Sta, Sfsa, CheckFun) of
+        {Sfsb,{Vtb,Stb}} ->
+          {Vt, St1} = vtmerge_pat(Vta, Vtb, Stb),
+          {Sfsb, Vt, [], St1};
+        {Sfsb,{Vtb,Newb,Stb}} ->
+          {Vt, Mst0} = vtmerge_pat(Vta, Vtb, Stb),
+          {New, Mst} = vtmerge_pat(Newa, Newb, Mst0),
+          {Sfsb, Vt, New, Mst}
+      end
+          end, {[],[],[],St0}, Fs),
+  {Uvt,Unew,St1}.
+
+check_struct_fields(Fs, Vt0, St0) ->
+  CheckFun = fun expr/3,
+  {_SeenFields,Uvt,St1} =
+    foldl(
+      fun (Field, {Sfsa,Vta,Sta}) ->
+        {Sfsb,{Vtb,Stb}} = check_struct_field(Field, Vt0, Sta, Sfsa, CheckFun),
+        {Vt1, St1} = vtmerge_pat(Vta, Vtb, Stb),
+        {Sfsb, Vt1, St1}
+      end,
+      {[],[], St0},
+      Fs),
+  {Uvt,St1}.
+
+check_struct_field({struct_field, Af, F, Val}, Vt, St, Sfs, CheckFun) ->
+  case member(F, Sfs) of
+    true -> {Sfs, {[], add_error(Af, {redefine_struct_field, F}, St)}};
+    false -> {[F|Sfs],CheckFun(Val, Vt, St)}
+  end.
 
 %% record_field(Field, RecordName, [RecDefField], State) ->
 %%      {UpdVarTable,State}.

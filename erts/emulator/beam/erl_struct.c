@@ -32,8 +32,8 @@
 #define STRUCT_INITIAL_SIZE   4000
 #define STRUCT_LIMIT          (512*1024)
 
-#define STRUCT_HASH(module, name, arity)                                      \
-    ((atom_val(module) * atom_val(name)) ^ (arity))
+#define STRUCT_HASH(module, name)                                             \
+    ((atom_val(module) * atom_val(name)))
 
 #ifdef DEBUG
 #  define IF_DEBUG(x) x
@@ -82,7 +82,7 @@ static HashValue
 struct_hash(struct struct_hash_entry *se)
 {
     ErtsStructEntry *str = se->sp;
-    return STRUCT_HASH(str->module, str->name, str->arity);
+    return STRUCT_HASH(str->module, str->name);
 }
 
 static int
@@ -91,8 +91,7 @@ struct_cmp(struct struct_hash_entry* tmpl_e, struct struct_hash_entry* obj_e)
     const ErtsStructEntry *tmpl = tmpl_e->sp, *obj = obj_e->sp;
 
     return !(tmpl->module == obj->module &&
-             tmpl->name == obj->name &&
-             tmpl->arity == obj->arity);
+             tmpl->name == obj->name);
 }
 
 static struct struct_hash_entry*
@@ -118,7 +117,6 @@ struct_alloc(struct struct_hash_entry* tmpl_e)
 
         obj->module = tmpl->module;
         obj->name = tmpl->name;
-        obj->arity = tmpl->arity;
 
         for (ix = 0; ix < ERTS_NUM_CODE_IX; ix++) {
             blob->entryv[ix].slot.index = -1;
@@ -182,25 +180,22 @@ void erts_struct_init_table(void)
 }
 
 static struct struct_hash_entry* init_template(struct struct_templ* templ,
-                                          Eterm module, Eterm name, Uint arity)
+                                          Eterm module, Eterm name)
 {
     templ->entry.sp = &templ->str;
     templ->entry.slot.index = -1;
     templ->str.module = module;
     templ->str.name = name;
-    templ->str.arity = arity;
     return &templ->entry;
 }
 
 /* Declared extern in header */
 ErtsStructEntry *erts_struct_find_entry(Eterm module,
                                    Eterm name,
-                                   Uint arity,
                                    ErtsCodeIndex code_ix);
 
 ErtsStructEntry *erts_struct_find_entry(Eterm module,
                                    Eterm name,
-                                   Uint arity,
                                    ErtsCodeIndex code_ix)
 {
     struct struct_templ templ;
@@ -209,7 +204,7 @@ ErtsStructEntry *erts_struct_find_entry(Eterm module,
     ASSERT(code_ix != erts_staging_code_ix());
 
     ee = hash_get(&struct_tables[code_ix].htable,
-                  init_template(&templ, module, name, arity));
+                  init_template(&templ, module, name));
 
     if (ee) {
         return ee->sp;
@@ -218,7 +213,7 @@ ErtsStructEntry *erts_struct_find_entry(Eterm module,
     return NULL;
 }
 
-ErtsStructEntry *erts_struct_put(Eterm module, Eterm name, Uint arity)
+ErtsStructEntry *erts_struct_put(Eterm module, Eterm name)
 {
     ErtsCodeIndex code_ix = erts_staging_code_ix();
     struct struct_templ templ;
@@ -231,7 +226,7 @@ ErtsStructEntry *erts_struct_put(Eterm module, Eterm name, Uint arity)
 
     ee = (struct struct_hash_entry*)
         index_put_entry(&struct_tables[code_ix],
-                        init_template(&templ, module, name, arity));
+                        init_template(&templ, module, name));
 
     erts_struct_staging_unlock();
 
@@ -239,8 +234,7 @@ ErtsStructEntry *erts_struct_put(Eterm module, Eterm name, Uint arity)
 }
 
 ErtsStructEntry *erts_struct_get_or_make_stub(Eterm module,
-                                              Eterm name,
-                                              Uint arity)
+                                              Eterm name)
 {
     ErtsCodeIndex code_ix;
     ErtsStructEntry *sp;
@@ -251,7 +245,7 @@ ErtsStructEntry *erts_struct_get_or_make_stub(Eterm module,
 
     do {
         code_ix = erts_active_code_ix();
-        sp = erts_struct_find_entry(module, name, arity, code_ix);
+        sp = erts_struct_find_entry(module, name, code_ix);
 
         if (sp == NULL) {
             /* The code is not loaded (yet). Put the struct in the staging
@@ -265,7 +259,7 @@ ErtsStructEntry *erts_struct_get_or_make_stub(Eterm module,
 
                 IndexTable *tab = &struct_tables[erts_staging_code_ix()];
 
-                init_template(&templ, module, name, arity);
+                init_template(&templ, module, name);
                 entry = (struct struct_hash_entry *)
                     index_put_entry(tab, &templ.entry);
                 sp = entry->sp;
@@ -353,7 +347,7 @@ BIF_RETTYPE struct_prototype_define_3(BIF_ALIST_3) {
     pairs = tuple_val(BIF_ARG_3);
     arity = arityval(*pairs);
 
-    if (arity <= 1 || arity > MAX_ARG) {
+    if (arity > MAX_ARG) {
         BIF_ERROR(BIF_P, BADARG);
     }
 
@@ -397,7 +391,7 @@ BIF_RETTYPE struct_prototype_define_3(BIF_ALIST_3) {
             defp->fields[i].value = pair[2];
         }
 
-        entry = erts_struct_put(BIF_ARG_1, BIF_ARG_2, arity);
+        entry = erts_struct_put(BIF_ARG_1, BIF_ARG_2);
         entry->definitions[erts_staging_code_ix()] = def;
 
         defp->entry = make_small((Uint)entry);
@@ -410,26 +404,23 @@ BIF_RETTYPE struct_prototype_define_3(BIF_ALIST_3) {
     BIF_RET(am_true);
 }
 
-BIF_RETTYPE struct_prototype_create_3(BIF_ALIST_3) {
-    /* Module, Name, Arity */
-    Eterm module, name, arity;
+BIF_RETTYPE struct_prototype_create_2(BIF_ALIST_2) {
+    /* Module, Name */
+    Eterm module, name;
     ErtsStructEntry *entry;
     Uint code_ix;
 
     module = BIF_ARG_1;
     name = BIF_ARG_2;
-    arity = BIF_ARG_3;
 
     if (!is_atom(module) ||
-        !is_atom(name) ||
-        !(is_small(arity) && unsigned_val(arity) <= MAX_ARG)) {
+        !is_atom(name)) {
         BIF_ERROR(BIF_P, BADARG);
     }
 
     code_ix = erts_active_code_ix();
     entry = erts_struct_find_entry(module,
                                    name,
-                                   unsigned_val(arity),
                                    code_ix);
 
     if (entry != NULL) {
@@ -533,8 +524,8 @@ BIF_RETTYPE struct_prototype_read_2(BIF_ALIST_2) {
     BIF_ERROR(BIF_P, BADARG);
 }
 
-BIF_RETTYPE struct_prototype_is_4(BIF_ALIST_4) {
-    Eterm obj, module, name, arity;
+BIF_RETTYPE struct_prototype_is_3(BIF_ALIST_3) {
+    Eterm obj, module, name;
     ErtsStructDefinition *defp;
     ErtsStructEntry *entry;
     Uint code_ix;
@@ -542,17 +533,15 @@ BIF_RETTYPE struct_prototype_is_4(BIF_ALIST_4) {
     obj = BIF_ARG_1;
     module = BIF_ARG_2;
     name = BIF_ARG_3;
-    arity = BIF_ARG_4;
 
     if (!is_struct(obj) ||
         !is_atom(module) ||
-        !is_atom(name) ||
-        !(is_small(arity) && unsigned_val(arity) < MAX_ARG)) {
+        !is_atom(name)) {
         BIF_RET(am_false);
     }
 
     code_ix = erts_active_code_ix();
-    entry = erts_struct_find_entry(module, name, unsigned_val(arity), code_ix);
+    entry = erts_struct_find_entry(module, name, code_ix);
     defp = (ErtsStructDefinition*)(struct_val(obj)[1]);
 
     ASSERT(is_small(defp->entry));
@@ -561,4 +550,77 @@ BIF_RETTYPE struct_prototype_is_4(BIF_ALIST_4) {
     }
 
     BIF_RET(am_false);
+}
+
+Eterm struct_module(Eterm obj) {
+    Eterm *objp = struct_val(obj);
+    ErtsStructDefinition *defp = (ErtsStructDefinition*)boxed_val(objp[1]);
+    ErtsStructEntry *entry = (ErtsStructEntry*)unsigned_val(defp->entry);
+    return entry->module;
+}
+
+Eterm struct_name(Eterm obj) {
+    Eterm *objp = struct_val(obj);
+    ErtsStructDefinition *defp = (ErtsStructDefinition*)boxed_val(objp[1]);
+    ErtsStructEntry *entry = (ErtsStructEntry*)unsigned_val(defp->entry);
+    return entry->name;
+}
+
+Eterm struct_get_element(Eterm obj, Eterm key) {
+    /* Struct term, Key */
+    ErtsStructDefinition *defp;
+    int field_count;
+    Eterm *objp;
+
+    if (!is_struct(obj) ||
+        !is_atom(key)) {
+        return THE_NON_VALUE;
+    }
+
+    objp = struct_val(obj);
+    field_count = header_arity(objp[0]) - 1;
+    defp = (ErtsStructDefinition*)boxed_val(objp[1]);
+
+    for (int i = 0; i < field_count; i++) {
+        if (eq(key, defp->fields[i].key)) {
+            return objp[2 + i];
+        }
+    }
+
+    return THE_NON_VALUE;
+}
+
+
+BIF_RETTYPE struct_prototype_module_1(BIF_ALIST_1) {
+    Eterm obj, *objp;
+    ErtsStructDefinition *defp;
+    ErtsStructEntry *entry;
+
+    obj = BIF_ARG_1;
+    if (!is_struct(obj)) {
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    objp = struct_val(obj);
+
+    defp = (ErtsStructDefinition*)boxed_val(objp[1]);
+    entry = (ErtsStructEntry*)unsigned_val(defp->entry);
+
+    BIF_RET(entry->module);
+}
+
+BIF_RETTYPE struct_prototype_name_1(BIF_ALIST_1) {
+    Eterm obj, *objp;
+    ErtsStructDefinition *defp;
+    ErtsStructEntry *entry;
+
+    obj = BIF_ARG_1;
+    if (!is_struct(obj)) {
+        BIF_ERROR(BIF_P, BADARG);
+    }
+    objp = struct_val(obj);
+
+    defp = (ErtsStructDefinition*)boxed_val(objp[1]);
+    entry = (ErtsStructEntry*)unsigned_val(defp->entry);
+
+    BIF_RET(entry->name);
 }
