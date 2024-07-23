@@ -35,6 +35,7 @@ map_comprehension
 binary_comprehension
 tuple
 record_expr record_tuple record_field record_fields
+struct_expr struct_tuple struct_field struct_fields
 map_expr map_tuple map_field map_field_assoc map_field_exact map_fields map_key
 if_expr if_clause if_clauses case_expr cr_clause cr_clauses receive_expr
 fun_expr fun_clause fun_clauses atom_or_var integer_or_var
@@ -79,7 +80,7 @@ ssa_check_when_clauses.
 Terminals
 char integer float atom sigil_prefix string sigil_suffix var
 
-'(' ')' ',' '->' '{' '}' '[' ']' '|' '||' '<-' ';' ':' '#' '.'
+'(' ')' ',' '->' '{' '}' '[' ']' '|' '||' '<-' ';' ':' '#' '&' '.'
 'after' 'begin' 'case' 'try' 'catch' 'end' 'fun' 'if' 'of' 'receive' 'when'
 'maybe' 'else'
 'andalso' 'orelse'
@@ -111,6 +112,7 @@ Left 400 add_op.
 Left 500 mult_op.
 Unary 600 prefix_op.
 Nonassoc 700 '#'.
+Nonassoc 700 '&'.
 Nonassoc 800 ':'.
 Nonassoc 900 clause_body_exprs.
 
@@ -267,6 +269,7 @@ expr -> prefix_op expr : ?mkop1('$1', '$2').
 expr -> map_expr : '$1'.
 expr -> function_call : '$1'.
 expr -> record_expr : '$1'.
+expr -> struct_expr : '$1'.
 expr -> expr_remote : '$1'.
 
 expr_remote -> expr_max ':' expr_max : {remote,?anno('$2'),'$1','$3'}.
@@ -413,14 +416,42 @@ record_expr -> record_expr '#' atom '.' atom :
 record_expr -> record_expr '#' atom record_tuple :
 	{record,?anno('$2'),'$1',element(3, '$3'),'$4'}.
 
+struct_expr -> '&' atom ':' atom struct_tuple :
+	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$4'}.
+struct_expr -> '&' atom struct_tuple :
+	{struct,?anno('$1'),element(3, '$2'),'$3'}.
+
+struct_expr -> expr_max '&' atom ':' atom '.' atom :
+	{struct_field,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$7'}.
+struct_expr -> expr_max '&' atom '.' atom :
+	{struct_field,?anno('$2'),'$1',element(3, '$3'),'$5'}.
+
+struct_expr -> expr_max '&' atom ':' atom struct_tuple :
+	{struct,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
+struct_expr -> expr_max '&' atom struct_tuple :
+	{struct,?anno('$2'),'$1',element(3, '$3'),'$4'}.
+
+struct_expr -> struct_expr '&' atom ':' atom struct_tuple :
+	{struct,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
+struct_expr -> struct_expr '&' atom struct_tuple :
+	{struct,?anno('$2'),'$1',element(3, '$3'),'$4'}.
+
 record_tuple -> '{' '}' : [].
 record_tuple -> '{' record_fields '}' : '$2'.
+
+struct_tuple -> '{' '}' : [].
+struct_tuple -> '{' struct_fields '}' : '$2'.
 
 record_fields -> record_field : ['$1'].
 record_fields -> record_field ',' record_fields : ['$1' | '$3'].
 
+struct_fields -> struct_field : ['$1'].
+struct_fields -> struct_field ',' struct_fields : ['$1' | '$3'].
+
 record_field -> var '=' expr : {record_field,?anno('$1'),'$1','$3'}.
 record_field -> atom '=' expr : {record_field,?anno('$1'),'$1','$3'}.
+
+struct_field -> atom '=' expr : {struct_field,?anno('$1'),'$1','$3'}.
 
 %% N.B. This is called from expr.
 
@@ -2018,6 +2049,7 @@ inop_prec('rem') -> {500,500,600};
 inop_prec('band') -> {500,500,600};
 inop_prec('and') -> {500,500,600};
 inop_prec('#') -> {800,700,800};
+inop_prec('&') -> {800,700,800};
 inop_prec(':') -> {900,800,900};
 inop_prec('.') -> {900,900,1000}.
 
@@ -2031,7 +2063,8 @@ preop_prec('+') -> {600,700};
 preop_prec('-') -> {600,700};
 preop_prec('bnot') -> {600,700};
 preop_prec('not') -> {600,700};
-preop_prec('#') -> {700,800}.
+preop_prec('#') -> {700,800};
+preop_prec('&') -> {700,800}.
 
 -doc false.
 -spec func_prec() -> {800,700}.
