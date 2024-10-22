@@ -7960,7 +7960,7 @@ Failures:
       Pid :: pid(),
       Item :: process_info_item(),
       InfoTuple :: process_info_result_item();
-                  (Pid, ItemList) -> InfoTupleList | [] | undefined when
+                  (Pid, ItemList) -> InfoTupleList when
       Pid :: pid(),
       ItemList :: [Item],
       Item :: process_info_item(),
