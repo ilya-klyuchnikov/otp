@@ -45,9 +45,9 @@ atomic strings
 prefix_op mult_op add_op list_op comp_op
 binary bin_elements bin_element bit_expr sigil
 opt_bit_size_expr bit_size_expr opt_bit_type_list bit_type_list bit_type
-top_type top_types type typed_expr typed_attr_val
+top_type top_types type typed_attr_val
 type_sig type_sigs type_guard type_guards fun_type binary_type
-type_spec spec_fun typed_exprs typed_record_fields field_types field_type
+type_spec spec_fun field_types field_type
 map_pair_types map_pair_type
 bin_base_type bin_unit_type
 maybe_expr maybe_match_exprs maybe_match
@@ -74,7 +74,8 @@ ssa_check_map_key_tuple_elements
 ssa_check_pat
 ssa_check_pats
 ssa_check_when_clause
-ssa_check_when_clauses.
+ssa_check_when_clauses
+maybe_typed_expr.
 
 Terminals
 char integer float atom sigil_prefix string sigil_suffix var
@@ -136,17 +137,7 @@ type_spec -> '(' spec_fun type_sigs ')' : {'$2', '$3'}.
 spec_fun ->                           atom : '$1'.
 spec_fun ->                  atom ':' atom : {'$1', '$3'}.
 
-typed_attr_val -> expr ',' typed_record_fields : {typed_record, '$1', '$3'}.
 typed_attr_val -> expr '::' top_type           : {type_def, '$1', '$3'}.
-
-typed_record_fields -> '{' typed_exprs '}' : {tuple, ?anno('$1'), '$2'}.
-
-typed_exprs -> typed_expr                 : ['$1'].
-typed_exprs -> typed_expr ',' typed_exprs : ['$1'|'$3'].
-typed_exprs -> expr ',' typed_exprs       : ['$1'|'$3'].
-typed_exprs -> typed_expr ',' exprs       : ['$1'|'$3'].
-
-typed_expr -> expr '::' top_type          : {typed,'$1','$3'}.
 
 type_sigs -> type_sig                     : ['$1'].
 type_sigs -> type_sig ';' type_sigs       : ['$1'|'$3'].
@@ -253,6 +244,9 @@ clause_guard -> 'when' guard : '$2'.
 clause_guard -> '$empty' : [].
 
 clause_body -> '->' clause_body_exprs: '$2'.
+
+maybe_typed_expr -> expr : $1.
+maybe_typed_expr -> expr '::' top_type : {typed,'$1','$3'}.
 
 expr -> 'catch' expr : {'catch',?anno('$1'),'$2'}.
 expr -> expr '=' expr : {match,first_anno('$1'),'$1','$3'}.
@@ -535,8 +529,8 @@ argument_list -> '(' exprs ')' : {'$2',?anno('$1')}.
 pat_argument_list -> '(' ')' : {[],?anno('$1')}.
 pat_argument_list -> '(' pat_exprs ')' : {'$2',?anno('$1')}.
 
-exprs -> expr : ['$1'].
-exprs -> expr ',' exprs : ['$1' | '$3'].
+exprs -> maybe_typed_expr : ['$1'].
+exprs -> maybe_typed_expr ',' exprs : ['$1' | '$3'].
 
 clause_body_exprs -> ssa_check_when_clauses exprs : '$1' ++ '$2'.
 clause_body_exprs -> exprs : '$1'.
