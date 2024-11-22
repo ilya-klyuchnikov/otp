@@ -353,7 +353,7 @@ BIF_RETTYPE struct_prototype_define_3(BIF_ALIST_3) {
     pairs = tuple_val(BIF_ARG_3);
     arity = arityval(*pairs);
 
-    if (arity <= 1 || arity > MAX_ARG) {
+    if (arity > MAX_ARG) {
         BIF_ERROR(BIF_P, BADARG);
     }
 
