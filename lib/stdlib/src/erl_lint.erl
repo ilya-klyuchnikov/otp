@@ -2609,6 +2609,8 @@ expr({record,Anno,Name,Inits}, Vt, St) ->
                  fun (Dfs, St1) ->
                          init_fields(Inits, Anno, Name, Dfs, Vt, St1)
                  end);
+expr({struct, _Anno, {_MName, _Name}, _Inits=[]}, _Vt, St) ->
+  {[],St};
 expr({record_field,Anno,Rec,Name,Field}, Vt, St0) ->
     {Rvt,St1} = record_expr(Anno, Rec, Vt, St0),
     {Fvt,St2} = check_record(Anno, Name, St1,

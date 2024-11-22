@@ -344,6 +344,8 @@ expr({record_field,_A,R,Name,F}, St) ->
 expr({record,Anno,R,Name,Us}, St0) ->
     {Ue,St1} = record_update(R, Name, record_fields(Name, Anno, St0), Us, St0),
     expr(Ue, St1);
+expr({struct, _Anno, {MName, Name}, Inits=[]}, St) ->
+    {{struct, _Anno, {MName, Name}, Inits}, St};
 expr({bin,Anno,Es0}, St0) ->
     {Es1,St1} = expr_bin(Es0, St0),
     {{bin,Anno,Es1},St1};
