@@ -416,21 +416,25 @@ record_expr -> record_expr '#' atom '.' atom :
 record_expr -> record_expr '#' atom record_tuple :
 	{record,?anno('$2'),'$1',element(3, '$3'),'$4'}.
 
+%% creating a struct
 struct_expr -> '&' atom ':' atom struct_tuple :
-	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$4'}.
+	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$5'}.
 struct_expr -> '&' atom struct_tuple :
 	{struct,?anno('$1'),element(3, '$2'),'$3'}.
 
+%% accessing a struct field
 struct_expr -> expr_max '&' atom ':' atom '.' atom :
 	{struct_field,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$7'}.
 struct_expr -> expr_max '&' atom '.' atom :
 	{struct_field,?anno('$2'),'$1',element(3, '$3'),'$5'}.
 
+%% updating a struct
 struct_expr -> expr_max '&' atom ':' atom struct_tuple :
 	{struct,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
 struct_expr -> expr_max '&' atom struct_tuple :
 	{struct,?anno('$2'),'$1',element(3, '$3'),'$4'}.
 
+%% updating a struct
 struct_expr -> struct_expr '&' atom ':' atom struct_tuple :
 	{struct,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
 struct_expr -> struct_expr '&' atom struct_tuple :
