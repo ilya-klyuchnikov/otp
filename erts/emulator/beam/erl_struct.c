@@ -32,8 +32,8 @@
 #define STRUCT_INITIAL_SIZE   4000
 #define STRUCT_LIMIT          (512*1024)
 
-#define STRUCT_HASH(module, name, arity)                                      \
-    ((atom_val(module) * atom_val(name)) ^ (arity))
+#define STRUCT_HASH(module, name)                                      \
+    ((atom_val(module) * atom_val(name)))
 
 #ifdef DEBUG
 #  define IF_DEBUG(x) x
@@ -82,7 +82,7 @@ static HashValue
 struct_hash(struct struct_hash_entry *se)
 {
     ErtsStructEntry *str = se->sp;
-    return STRUCT_HASH(str->module, str->name, str->arity);
+    return STRUCT_HASH(str->module, str->name);
 }
 
 static int
@@ -91,8 +91,7 @@ struct_cmp(struct struct_hash_entry* tmpl_e, struct struct_hash_entry* obj_e)
     const ErtsStructEntry *tmpl = tmpl_e->sp, *obj = obj_e->sp;
 
     return !(tmpl->module == obj->module &&
-             tmpl->name == obj->name &&
-             tmpl->arity == obj->arity);
+             tmpl->name == obj->name);
 }
 
 static struct struct_hash_entry*
@@ -195,12 +194,10 @@ static struct struct_hash_entry* init_template(struct struct_templ* templ,
 /* Declared extern in header */
 ErtsStructEntry *erts_struct_find_entry(Eterm module,
                                    Eterm name,
-                                   Uint arity,
                                    ErtsCodeIndex code_ix);
 
 ErtsStructEntry *erts_struct_find_entry(Eterm module,
                                    Eterm name,
-                                   Uint arity,
                                    ErtsCodeIndex code_ix)
 {
     struct struct_templ templ;
@@ -209,7 +206,7 @@ ErtsStructEntry *erts_struct_find_entry(Eterm module,
     ASSERT(code_ix != erts_staging_code_ix());
 
     ee = hash_get(&struct_tables[code_ix].htable,
-                  init_template(&templ, module, name, arity));
+                  init_template(&templ, module, name, 0));
 
     if (ee) {
         return ee->sp;
@@ -251,7 +248,7 @@ ErtsStructEntry *erts_struct_get_or_make_stub(Eterm module,
 
     do {
         code_ix = erts_active_code_ix();
-        sp = erts_struct_find_entry(module, name, arity, code_ix);
+        sp = erts_struct_find_entry(module, name, code_ix);
 
         if (sp == NULL) {
             /* The code is not loaded (yet). Put the struct in the staging
@@ -410,26 +407,23 @@ BIF_RETTYPE struct_prototype_define_3(BIF_ALIST_3) {
     BIF_RET(am_true);
 }
 
-BIF_RETTYPE struct_prototype_create_3(BIF_ALIST_3) {
-    /* Module, Name, Arity */
-    Eterm module, name, arity;
+BIF_RETTYPE struct_prototype_create_2(BIF_ALIST_2) {
+    /* Module, Name */
+    Eterm module, name;
     ErtsStructEntry *entry;
     Uint code_ix;
 
     module = BIF_ARG_1;
     name = BIF_ARG_2;
-    arity = BIF_ARG_3;
 
     if (!is_atom(module) ||
-        !is_atom(name) ||
-        !(is_small(arity) && unsigned_val(arity) <= MAX_ARG)) {
+        !is_atom(name)) {
         BIF_ERROR(BIF_P, BADARG);
     }
 
     code_ix = erts_active_code_ix();
     entry = erts_struct_find_entry(module,
                                    name,
-                                   unsigned_val(arity),
                                    code_ix);
 
     if (entry != NULL) {
@@ -533,8 +527,8 @@ BIF_RETTYPE struct_prototype_read_2(BIF_ALIST_2) {
     BIF_ERROR(BIF_P, BADARG);
 }
 
-BIF_RETTYPE struct_prototype_is_4(BIF_ALIST_4) {
-    Eterm obj, module, name, arity;
+BIF_RETTYPE struct_prototype_is_3(BIF_ALIST_3) {
+    Eterm obj, module, name;
     ErtsStructDefinition *defp;
     ErtsStructEntry *entry;
     Uint code_ix;
@@ -542,17 +536,15 @@ BIF_RETTYPE struct_prototype_is_4(BIF_ALIST_4) {
     obj = BIF_ARG_1;
     module = BIF_ARG_2;
     name = BIF_ARG_3;
-    arity = BIF_ARG_4;
 
     if (!is_struct(obj) ||
         !is_atom(module) ||
-        !is_atom(name) ||
-        !(is_small(arity) && unsigned_val(arity) < MAX_ARG)) {
+        !is_atom(name)) {
         BIF_RET(am_false);
     }
 
     code_ix = erts_active_code_ix();
-    entry = erts_struct_find_entry(module, name, unsigned_val(arity), code_ix);
+    entry = erts_struct_find_entry(module, name, code_ix);
     defp = (ErtsStructDefinition*)(struct_val(obj)[1]);
 
     ASSERT(is_small(defp->entry));

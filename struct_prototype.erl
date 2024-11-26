@@ -12,7 +12,7 @@
 define(_Module, _Name, _KeyDefaultPairs) ->
     erlang:nif_error().
 
-create(_Module, _Name, _Arity) ->
+create(_Module, _Name) ->
     erlang:nif_error().
 
 update(_Object, _Key, _Value) ->
@@ -21,7 +21,7 @@ update(_Object, _Key, _Value) ->
 read(_Object, _Key) ->
     erlang:nif_error().
 
-is(_Object, _Module, _Name, _Arity) ->
+is(_Object, _Module, _Name) ->
     erlang:nif_error().
 
 name(_Object) ->
