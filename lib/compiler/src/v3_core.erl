@@ -702,6 +702,8 @@ expr({tuple,L,Es0}, St0) ->
     {annotate_tuple(A, Es1, St1),Eps,St1};
 expr({map,L,Es0}, St0) ->
     map_build_pairs(#c_literal{val=#{}}, Es0, full_anno(L, St0), St0);
+expr({struct, L, {M, N}, []}, St) ->
+  {#c_struct{anno=full_anno(L, St), mod=M, name=N}, [], St};
 expr({map,L,M,Es}, St) ->
     expr_map(M, Es, L, St);
 expr({bin,L,Es0}, St0) ->
@@ -3516,6 +3518,7 @@ skip_lowering(#c_call{}, _A) -> skip;
 skip_lowering(#c_cons{}, _A) -> skip;
 skip_lowering(#c_literal{}, _A) -> skip;
 skip_lowering(#c_map{}, _A) -> skip;
+skip_lowering(#c_struct{}, _A) -> skip;
 skip_lowering(#c_opaque{}, _A) -> skip;
 skip_lowering(#c_primop{}, _A) -> skip;
 skip_lowering(#c_tuple{}, _A) -> skip;
@@ -4089,6 +4092,8 @@ is_simple(#c_tuple{es=Es}) -> is_simple_list(Es);
 is_simple(#c_map{es=Es}) -> is_simple_list(Es);
 is_simple(#c_map_pair{key=K,val=V}) ->
     is_simple(K) andalso is_simple(V);
+is_simple(#c_struct{}) ->
+    true;
 is_simple(_) -> false.
 
 -spec is_simple_list([cerl:cerl()]) -> boolean().

@@ -262,7 +262,8 @@ type(#c_try{}) -> 'try';
 type(#c_tuple{}) -> tuple;
 type(#c_values{}) -> values;
 type(#c_var{}) -> var;
-type(#c_opaque{}) -> opaque.
+type(#c_opaque{}) -> opaque;
+type(#c_struct{}) -> struct.
 
 -doc """
 Returns `true` if `Node` is a leaf node, otherwise `false`.

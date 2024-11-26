@@ -146,6 +146,8 @@ map_1(F, T) ->
 	    update_c_tuple_skel(T, map_list(F, tuple_es(T)));
  	map ->
 	    update_c_map(T, map(F, map_arg(T)), map_list(F, map_es(T)));
+	struct ->
+		  T;
 	map_pair ->
 	    update_c_map_pair(T, map(F, map_pair_op(T)),
                                  map(F, map_pair_key(T)),
@@ -412,6 +414,8 @@ mapfold(Pre, Post, S00, T0) ->
 		    {M , S1} = mapfold(Pre, Post, S0, map_arg(T)),
 		    {Ts, S2} = mapfold_list(Pre, Post, S1, map_es(T)),
 		    Post(update_c_map(T, M, Ts), S2);
+		struct ->
+			  Post(T, S0);
 		map_pair ->
 		    {Op,  S1} = mapfold(Pre, Post, S0, map_pair_op(T)),
 		    {Key, S2} = mapfold(Pre, Post, S1, map_pair_key(T)),
@@ -729,6 +733,8 @@ next_free(T, Max) ->
             next_free_in_list(tuple_es(T), Max);
         map ->
             next_free_in_list([map_arg(T)|map_es(T)], Max);
+			  struct ->
+					Max;
         map_pair ->
             next_free_in_list([map_pair_op(T),map_pair_key(T),
                                map_pair_val(T)], Max);
