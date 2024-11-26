@@ -77,6 +77,8 @@
 		es :: [cerl:c_map_pair()],
 		is_pat=false :: boolean()}).
 
+-record(c_struct, {anno=[] :: list(), mod :: atom(), name :: atom()}).
+
 -record(c_map_pair, {anno=[] :: list(),
 	             op :: #c_literal{val::'assoc'} | #c_literal{val::'exact'},
 		     key :: any(),              % TODO
