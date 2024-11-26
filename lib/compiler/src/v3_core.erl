@@ -114,7 +114,7 @@
 -record(iletrec,   {anno=#a{},defs,body}).
 -record(imatch,    {anno=#a{},pat,guard=[],arg,fc}).
 -record(iexprs,    {anno=#a{},bodies=[]}).
--record(imap,      {anno=#a{},arg=#c_literal{val=#{}},es,is_pat=false}).
+-record(imap,      {anno=#a{},arg=#c_literal{val=#{}},es}).
 -record(imappair,  {anno=#a{},op,key,val}).
 -record(iprimop,   {anno=#a{},name,args}).
 -record(iprotect,  {anno=#a{},body}).
