@@ -580,6 +580,8 @@ format_error_1({bad_dialyzer_attribute,Term}) ->
     {~"badly formed dialyzer attribute: ~tw", [Term]};
 format_error_1({bad_dialyzer_option,Term}) ->
     {~"unknown dialyzer warning option: ~tw", [Term]};
+format_error_1({struct_todo,init_fields}) ->
+    ~"struct initialization: TODO";
 %% --- obsolete? unused? ---
 format_error_1({format_error, {Fmt, Args}}) ->
     {Fmt, Args}.
@@ -2611,6 +2613,8 @@ expr({record,Anno,Name,Inits}, Vt, St) ->
                  end);
 expr({struct, _Anno, {_MName, _Name}, _Inits=[]}, _Vt, St) ->
   {[],St};
+expr({struct, Anno, {_MName, _Name}, _Inits}, _Vt, St) ->
+  {[],add_error(Anno, {struct_todo,init_fields}, St)};
 expr({record_field,Anno,Rec,Name,Field}, Vt, St0) ->
     {Rvt,St1} = record_expr(Anno, Rec, Vt, St0),
     {Fvt,St2} = check_record(Anno, Name, St1,
