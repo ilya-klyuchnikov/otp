@@ -703,7 +703,7 @@ expr({tuple,L,Es0}, St0) ->
 expr({map,L,Es0}, St0) ->
     map_build_pairs(#c_literal{val=#{}}, Es0, full_anno(L, St0), St0);
 expr({struct, L, {M, N}, []}, St) ->
-  {#c_struct{anno=full_anno(L, St), mod=M, name=N}, [], St};
+  {#c_struct{anno=full_anno(L, St), mod=M, name=N, es=[]}, [], St};
 expr({map,L,M,Es}, St) ->
     expr_map(M, Es, L, St);
 expr({bin,L,Es0}, St0) ->
@@ -2153,6 +2153,9 @@ pattern({tuple,L,Ps}, St) ->
 pattern({map,L,Pairs}, St0) ->
     {Ps,St1} = pattern_map_pairs(Pairs, St0),
     {#imap{anno=#a{anno=lineno_anno(L, St1)},es=Ps},St1};
+pattern({struct,L,{M,N},Pairs},St0) ->
+    {Ps,St1} = pattern_struct_pairs(Pairs, St0),
+    {#c_struct{anno=lineno_anno(L, St1),mod=M,name=N,es=Ps},St1};
 pattern({bin,L,Ps}, St0) ->
     {Segments,St} = pat_bin(Ps, St0),
     {#ibinary{anno=#a{anno=lineno_anno(L, St)},segments=Segments},St};
@@ -2193,6 +2196,9 @@ pattern_map_pairs(Ps, St0) ->
     {CMapPairs,St1} = mapfoldl(fun pattern_map_pair/2, St0, Ps),
     {pat_alias_map_pairs(CMapPairs),St1}.
 
+pattern_struct_pairs(Ps,St0) ->
+    mapfoldl(fun pattern_struct_pair/2, St0, Ps).
+
 pattern_map_pair({map_field_exact,L,K,V}, St0) ->
     Ck0 = erl_eval:partial_eval(K),
     {Ck,St1} = exprs([Ck0], St0),
@@ -2201,6 +2207,10 @@ pattern_map_pair({map_field_exact,L,K,V}, St0) ->
                op=#c_literal{val=exact},
                key=Ck,
                val=Cv},St2}.
+
+pattern_struct_pair({struct_field, L, N, V}, St0) ->
+  {Cv, St1} = pattern(V, St0),
+  {#c_struct_pair{anno=lineno_anno(L, St1),name=N,val=Cv},St1}.
 
 pat_alias_map_pairs(Ps) ->
     D0 = foldl(fun(#imappair{key=K0}=Pair, A) ->
@@ -3802,6 +3812,8 @@ split_pat(#c_binary{anno=Anno0,segments=Segs0}=Bin, St0) ->
     end;
 split_pat(#c_map{es=Es}=Map, St) ->
     split_map_pat(Es, Map, St, []);
+split_pat(#c_struct{es=Es}=Str, St) ->
+    split_struct_pat(Es, Str, St, []);
 split_pat(#c_var{}, _) ->
     none;
 split_pat(#c_alias{pat=Pat}=Alias0, St0) ->
@@ -3858,6 +3870,18 @@ split_map_pat([#c_map_pair{key=Key,val=Val}=E0|Es], Map0, St0, Acc) ->
             {BefMap,Split,St1}
     end;
 split_map_pat([], _, _, _) -> none.
+
+split_struct_pat([#c_struct_pair{val=Val}=E0|Es], Str0, St0, Acc) ->
+  case split_pat(Val, St0) of
+    none ->
+      split_struct_pat(Es, Str0, St0, [E0|Acc]);
+    {Ps,Split,St1} ->
+      {Var,St} = new_var(St1),
+      E = E0#c_struct_pair{val=Var},
+      Str = Str0#c_struct{es=reverse(Acc, [E|Es])},
+      {Str,{split, [Var],Ps,Split,St}}
+  end;
+split_struct_pat([], _, _, _) -> none.
 
 eval_map_key(#c_var{}, _E, _Es, _Map, _St) ->
     none;
@@ -4092,8 +4116,8 @@ is_simple(#c_tuple{es=Es}) -> is_simple_list(Es);
 is_simple(#c_map{es=Es}) -> is_simple_list(Es);
 is_simple(#c_map_pair{key=K,val=V}) ->
     is_simple(K) andalso is_simple(V);
-is_simple(#c_struct{}) ->
-    true;
+is_simple(#c_struct{es=Es}) -> is_simple_list(Es);
+is_simple(#c_struct_pair{val = V}) -> is_simple(V);
 is_simple(_) -> false.
 
 -spec is_simple_list([cerl:cerl()]) -> boolean().

@@ -228,12 +228,12 @@ expr(#c_map{anno=Anno,arg=V0,es=Es0}=Map, Ctxt, Sub) ->
     Es = pair_list(Es0, descend(Map, Sub)),
     V = expr(V0, value, Sub),
     ann_c_map(Anno, V, Es);
-expr(#c_struct{anno=Anno, mod = M, name = N}=Struct, Ctxt, Sub) ->
+expr(#c_struct{anno=Anno, mod = M, name = N, es=[]}=Struct, Ctxt, Sub) ->
   case Ctxt of
     effect -> warn_useless_building(Struct, Sub);
     value -> ok
   end,
-  #c_struct{anno=Anno, mod = M, name = N};
+  #c_struct{anno=Anno, mod = M, name = N, es=[]};
 expr(#c_binary{segments=Ss}=Bin0, Ctxt, Sub) ->
     %% Warn for useless building, but always build the binary
     %% anyway to preserve a possible exception.
@@ -1144,6 +1144,9 @@ pattern(#c_tuple{anno=Anno,es=Es0}, Isub, Osub0) ->
 pattern(#c_map{anno=Anno,es=Es0}=Map, Isub, Osub0) ->
     {Es1,Osub1} = map_pair_pattern_list(Es0, Isub, Osub0),
     {Map#c_map{anno=Anno,es=Es1},Osub1};
+pattern(#c_struct{anno=Anno,es=Es0}=Str, Isub, Osub0) ->
+    {Es1,Osub1} = struct_pair_pattern_list(Es0, Isub, Osub0),
+    {Str#c_struct{anno=Anno,es=Es1},Osub1};
 pattern(#c_binary{segments=V0}=Pat, Isub, Osub0) ->
     {V1,Osub1} = bin_pattern_list(V0, Isub, Osub0),
     {Pat#c_binary{segments=V1},Osub1};
@@ -1160,6 +1163,14 @@ map_pair_pattern(#c_map_pair{op=#c_literal{val=exact},key=K0,val=V0}=Pair,{Isub,
     K = expr(K0, Isub),
     {V,Osub} = pattern(V0,Isub,Osub0),
     {Pair#c_map_pair{key=K,val=V},{Isub,Osub}}.
+
+struct_pair_pattern_list(Ps0, Isub, Osub0) ->
+  {Ps,{_,Osub}} = mapfoldl(fun struct_pair_pattern/2, {Isub,Osub0}, Ps0),
+  {Ps,Osub}.
+
+struct_pair_pattern(#c_struct_pair{val=V0}=Pair,{Isub,Osub0}) ->
+  {V,Osub} = pattern(V0,Isub,Osub0),
+  {Pair#c_struct_pair{val=V},{Isub,Osub}}.
 
 bin_pattern_list(Ps, Isub, Osub0) ->
     mapfoldl(fun(P, Osub) ->
