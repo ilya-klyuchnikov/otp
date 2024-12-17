@@ -424,9 +424,9 @@ struct_expr -> '&' atom struct_tuple :
 
 %% accessing a struct field
 struct_expr -> expr_max '&' atom ':' atom '.' atom :
-	{struct_field,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$7'}.
+	{struct_field,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},element(3, '$7')}.
 struct_expr -> expr_max '&' atom '.' atom :
-	{struct_field,?anno('$2'),'$1',element(3, '$3'),'$5'}.
+	{struct_field,?anno('$2'),'$1',element(3, '$3'),element(3, '$5')}.
 
 %% updating a struct
 struct_expr -> expr_max '&' atom ':' atom struct_tuple :
