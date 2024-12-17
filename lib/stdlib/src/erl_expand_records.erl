@@ -138,6 +138,9 @@ pattern({map_field_exact,Anno,K0,V0}, St0) ->
     {K,St1} = expr(K0, St0),
     {V,St2} = pattern(V0, St1),
     {{map_field_exact,Anno,K,V},St2};
+pattern({struct_field, Anno, F, V0}, St0) ->
+    {V, St1} = pattern(V0, St0),
+    {{struct_field, Anno, F, V}, St1};
 pattern({record_index,Anno,Name,Field}, St) ->
     {index_expr(Anno, Field, Name, record_fields(Name, Anno, St)),St};
 pattern({record,Anno0,Name,Pfs}, St0) ->
@@ -145,6 +148,9 @@ pattern({record,Anno0,Name,Pfs}, St0) ->
     {TMs,St1} = pattern_list(pattern_fields(Fs, Pfs), St0),
     Anno = mark_record(Anno0, St1),
     {{tuple,Anno,[{atom,Anno0,Name} | TMs]},St1};
+pattern({struct,Anno,N,Ps}, St0) ->
+    {TPs,St1} = pattern_list(Ps, St0),
+    {{struct,Anno,N,TPs},St1};
 pattern({bin,Anno,Es0}, St0) ->
     {Es1,St1} = pattern_bin(Es0, St0),
     {{bin,Anno,Es1},St1};

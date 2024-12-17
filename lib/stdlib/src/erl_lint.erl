@@ -416,6 +416,8 @@ format_error_1({redefine_record,T}) ->
     {~"record ~tw already defined", [T]};
 format_error_1({redefine_field,T,F}) ->
     {~"field ~tw already defined in record ~tw", [F,T]};
+format_error_1({redefine_struct_field,F}) ->
+    {~"field ~tw already defined in struct", [F]};
 format_error_1(bad_multi_field_init) ->
     {~"'_' initializes no omitted fields", []};
 format_error_1({undefined_field,T,F}) ->
@@ -1975,6 +1977,8 @@ pattern({record,Anno,Name,Pfs}, Vt, Old, St) ->
             pattern_fields(Pfs, Name, Fields, Vt, Old, St2);
         error -> {[],[],add_error(Anno, {undefined_record,Name}, St)}
     end;
+pattern({struct, _Anno, {_Mod, _Name}, Fs}, Vt, Old, St) ->
+  pattern_struct_fields(Fs, Vt, Old, St);
 pattern({bin,_,Fs}, Vt, Old, St) ->
     pattern_bin(Fs, Vt, Old, St);
 pattern({op,_Anno,'++',{nil,_},R}, Vt, Old, St) ->
@@ -3085,6 +3089,28 @@ pattern_fields(Fs, Name, Fields, Vt0, Old, St0) ->
                       end
               end, {[],[],[],St0}, Fs),
     {Uvt,Unew,St1}.
+
+pattern_struct_fields(Fs, Vt0, Old, St0) ->
+  CheckFun = fun (Val, Vt, St) -> pattern(Val, Vt, Old, St) end,
+  {_SeenFields,Uvt,Unew,St1} =
+    foldl(fun (Field, {Sfsa,Vta,Newa,Sta}) ->
+      case check_struct_field(Field, Vt0, Sta, Sfsa, CheckFun) of
+        {Sfsb,{Vtb,Stb}} ->
+          {Vt, St1} = vtmerge_pat(Vta, Vtb, Stb),
+          {Sfsb, Vt, [], St1};
+        {Sfsb,{Vtb,Newb,Stb}} ->
+          {Vt, Mst0} = vtmerge_pat(Vta, Vtb, Stb),
+          {New, Mst} = vtmerge_pat(Newa, Newb, Mst0),
+          {Sfsb, Vt, New, Mst}
+      end
+          end, {[],[],[],St0}, Fs),
+  {Uvt,Unew,St1}.
+
+check_struct_field({struct_field, Af, F, Val}, Vt, St, Sfs, CheckFun) ->
+  case member(F, Sfs) of
+    true -> {Sfs, {[], add_error(Af, {redefine_struct_field, F}, St)}};
+    false -> {[F|Sfs],CheckFun(Val, Vt, St)}
+  end.
 
 %% record_field(Field, RecordName, [RecDefField], State) ->
 %%      {UpdVarTable,State}.

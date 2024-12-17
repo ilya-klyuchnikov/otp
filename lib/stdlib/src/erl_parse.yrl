@@ -27,7 +27,7 @@ attribute attr_val
 function function_clauses function_clause
 clause_args clause_guard clause_body
 expr expr_max expr_remote
-pat_expr pat_expr_max map_pat_expr record_pat_expr
+pat_expr pat_expr_max map_pat_expr record_pat_expr struct_pat_expr
 pat_argument_list pat_exprs
 list tail
 list_comprehension lc_expr lc_exprs
@@ -301,6 +301,7 @@ pat_expr -> pat_expr mult_op pat_expr : ?mkop2('$1', '$2', '$3').
 pat_expr -> prefix_op pat_expr : ?mkop1('$1', '$2').
 pat_expr -> map_pat_expr : '$1'.
 pat_expr -> record_pat_expr : '$1'.
+pat_expr -> struct_pat_expr : '$1'.
 pat_expr -> pat_expr_max : '$1'.
 
 pat_expr_max -> var : '$1'.
@@ -440,6 +441,11 @@ struct_expr -> struct_expr '&' atom ':' atom struct_tuple :
 struct_expr -> struct_expr '&' atom struct_tuple :
 	{struct,?anno('$2'),'$1',element(3, '$3'),'$4'}.
 
+struct_pat_expr -> '&' atom ':' atom struct_tuple :
+	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$5'}.
+struct_pat_expr -> '&' atom struct_tuple :
+	{struct,?anno('$1'),element(3, '$2'),'$3'}.
+
 record_tuple -> '{' '}' : [].
 record_tuple -> '{' record_fields '}' : '$2'.
 
@@ -455,7 +461,7 @@ struct_fields -> struct_field ',' struct_fields : ['$1' | '$3'].
 record_field -> var '=' expr : {record_field,?anno('$1'),'$1','$3'}.
 record_field -> atom '=' expr : {record_field,?anno('$1'),'$1','$3'}.
 
-struct_field -> atom '=' expr : {struct_field,?anno('$1'),'$1','$3'}.
+struct_field -> atom '=' expr : {struct_field,?anno('$1'),element(3, '$1'),'$3'}.
 
 %% N.B. This is called from expr.
 
