@@ -582,6 +582,10 @@ format_error_1({bad_dialyzer_option,Term}) ->
     {~"unknown dialyzer warning option: ~tw", [Term]};
 format_error_1({struct_todo,init_fields}) ->
     ~"struct initialization: TODO";
+format_error_1({struct_todo,import}) ->
+    ~"struct import: TODO";
+format_error_1({struct_todo,field_expr}) ->
+    ~"struct field: TODO";
 %% --- obsolete? unused? ---
 format_error_1({format_error, {Fmt, Args}}) ->
     {Fmt, Args}.
@@ -2615,6 +2619,12 @@ expr({struct, _Anno, {_MName, _Name}, _Inits=[]}, _Vt, St) ->
   {[],St};
 expr({struct, Anno, {_MName, _Name}, _Inits}, _Vt, St) ->
   {[],add_error(Anno, {struct_todo,init_fields}, St)};
+expr({struct, Anno, Name, _Inits}, _Vt, St) when is_atom(Name) ->
+  {[],add_error(Anno, {struct_todo,import}, St)};
+expr({struct_field, Anno, _S, {_MName,_Name}, _FieldName}, _Vt, St) ->
+  {[],add_error(Anno, {struct_todo,field_expr}, St)};
+expr({struct_field, Anno, _S, Name, _FieldName}, _Vt, St) when is_atom(Name) ->
+  {[],add_error(Anno, {struct_todo,import}, St)};
 expr({record_field,Anno,Rec,Name,Field}, Vt, St0) ->
     {Rvt,St1} = record_expr(Anno, Rec, Vt, St0),
     {Fvt,St2} = check_record(Anno, Name, St1,
