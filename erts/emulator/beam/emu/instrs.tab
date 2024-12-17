@@ -990,6 +990,18 @@ is_map(Fail, Src) {
     }
 }
 
+is_struct(Fail, Src) {
+    if (!is_struct($Src)) {
+        $FAIL($Fail);
+    }
+}
+
+is_tagged_struct(Fail, Src, Mod, Name) {
+    if (!is_struct($Src) || $Mod != struct_module($Src) || $Name != struct_name($Src)) {
+        $FAIL($Fail);
+    }
+}
+
 is_nil(Fail, Src) {
     if (is_not_nil($Src)) {
         $FAIL($Fail);

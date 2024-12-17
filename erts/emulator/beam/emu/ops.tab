@@ -1523,6 +1523,9 @@ is_map Fail Lit=q | literal_is_map(Lit) => _
 is_map Fail cq => jump Fail
 is_map f? xy
 
+is_struct f? xy
+is_tagged_struct f? xy a a
+
 ## Transform has_map_fields #{ K1 := _, K2 := _ } to has_map_elements
 
 has_map_fields Fail Src Size Rest=* => has_map_fields(Fail, Src, Size, Rest)

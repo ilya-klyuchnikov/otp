@@ -555,6 +555,20 @@ BIF_RETTYPE struct_prototype_is_3(BIF_ALIST_3) {
     BIF_RET(am_false);
 }
 
+Eterm struct_module(Eterm obj) {
+    Eterm *objp = struct_val(obj);
+    ErtsStructDefinition *defp = (ErtsStructDefinition*)boxed_val(objp[1]);
+    ErtsStructEntry *entry = (ErtsStructEntry*)unsigned_val(defp->entry);
+    return entry->module;
+}
+
+Eterm struct_name(Eterm obj) {
+    Eterm *objp = struct_val(obj);
+    ErtsStructDefinition *defp = (ErtsStructDefinition*)boxed_val(objp[1]);
+    ErtsStructEntry *entry = (ErtsStructEntry*)unsigned_val(defp->entry);
+    return entry->name;
+}
+
 BIF_RETTYPE struct_prototype_module_1(BIF_ALIST_1) {
     Eterm obj, *objp;
     ErtsStructDefinition *defp;

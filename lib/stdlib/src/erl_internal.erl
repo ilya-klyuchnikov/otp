@@ -131,6 +131,7 @@ new_type_test(is_record, 2) -> true;
 new_type_test(is_record, 3) -> true;
 new_type_test(is_reference, 1) -> true;
 new_type_test(is_struct, 1) -> true;
+new_type_test(is_struct, 3) -> true;
 new_type_test(is_tuple, 1) -> true;
 new_type_test(Name, A) when is_atom(Name), is_integer(A) -> false.
 
