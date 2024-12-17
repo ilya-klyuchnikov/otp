@@ -204,7 +204,7 @@ format_1(#c_struct{mod = M, name = N, es = Es}, Ctxt) ->
   ["&" ++ atom_to_list(M) ++ ":" ++ atom_to_list(N) ++ "{",
     format_hseq(Es, ",", add_indent(Ctxt, 1), fun format/2),
     "}"];
-format_1(#c_struct_pair{name=K,val=V}, Ctxt) ->
+format_1(#c_struct_pair{key=K,val=V}, Ctxt) ->
   format_struct_pair("=", K, V, Ctxt);
 format_1(#c_map_pair{op=#c_literal{val=assoc},key=K,val=V}, Ctxt) ->
     format_map_pair("=>", K, V, Ctxt);

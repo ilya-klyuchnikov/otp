@@ -2208,9 +2208,9 @@ pattern_map_pair({map_field_exact,L,K,V}, St0) ->
                key=Ck,
                val=Cv},St2}.
 
-pattern_struct_pair({struct_field, L, N, V}, St0) ->
+pattern_struct_pair({struct_field, L, K, V}, St0) ->
   {Cv, St1} = pattern(V, St0),
-  {#c_struct_pair{anno=lineno_anno(L, St1),name=N,val=Cv},St1}.
+  {#c_struct_pair{anno=lineno_anno(L, St1),key=K,val=Cv},St1}.
 
 pat_alias_map_pairs(Ps) ->
     D0 = foldl(fun(#imappair{key=K0}=Pair, A) ->
