@@ -1546,7 +1546,7 @@ i_get_map_element_hash f? xy c W xy
 i_get_map_element Fail Src=c Key Dst =>
     move Src x | i_get_map_element Fail x Key Dst
 i_get_map_element f? xy xy xy
-get_struct_element f? xy xy xy
+get_struct_element f? xy a xy
 
 #
 # Convert the plus operations to a generic plus instruction.
