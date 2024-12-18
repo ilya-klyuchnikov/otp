@@ -418,18 +418,24 @@ record_expr -> record_expr '#' atom record_tuple :
 	{record,?anno('$2'),'$1',element(3, '$3'),'$4'}.
 
 %% creating a struct
+%% {struct, Anno, {M, N}, Pairs}
+%% {struct, Anno, N, Pairs}
 struct_expr -> '&' atom ':' atom struct_tuple :
 	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$5'}.
 struct_expr -> '&' atom struct_tuple :
 	{struct,?anno('$1'),element(3, '$2'),'$3'}.
 
 %% accessing a struct field
+%% {struct_field_expr, Anno, {Ma, Na}, Fa}
+%% {struct_field_expr, Anno, Na, Fa}
 struct_expr -> expr_max '&' atom ':' atom '.' atom :
-	{struct_field,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},element(3, '$7')}.
+	{struct_field_expr,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},element(3, '$7')}.
 struct_expr -> expr_max '&' atom '.' atom :
-	{struct_field,?anno('$2'),'$1',element(3, '$3'),element(3, '$5')}.
+	{struct_field_expr,?anno('$2'),'$1',element(3, '$3'),element(3, '$5')}.
 
 %% updating a struct
+%% {struct, Anno, Expr, {M, N}, Pairs}
+%% {struct, Anno, Expr, N, Pairs}
 struct_expr -> expr_max '&' atom ':' atom struct_tuple :
 	{struct,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
 struct_expr -> expr_max '&' atom struct_tuple :
@@ -461,6 +467,7 @@ struct_fields -> struct_field ',' struct_fields : ['$1' | '$3'].
 record_field -> var '=' expr : {record_field,?anno('$1'),'$1','$3'}.
 record_field -> atom '=' expr : {record_field,?anno('$1'),'$1','$3'}.
 
+%% {struct_field, Anno, Na, Pat}
 struct_field -> atom '=' expr : {struct_field,?anno('$1'),element(3, '$1'),'$3'}.
 
 %% N.B. This is called from expr.
