@@ -12,7 +12,8 @@ tests() ->
   test2(),
   test3(),
   test4(),
-  test6().
+  test6(),
+  test7().
 
 init_definitions() ->
   struct_prototype:define(a,a,
@@ -34,6 +35,17 @@ get_a1(&a:a{a1 = A1}) ->
 
 get_as(&a:a{a1 = A1, a2 = A2}) ->
   {A1, A2}.
+
+get_a12(&a:a{a3 = A3}) ->
+  A3;
+get_a12(&a:a{a1 = A1}) ->
+  A1.
+
+get_a13(&a:a{a1 = &a:a{}}) ->
+  a1;
+get_a13(&a:a{a1 = A1}) ->
+  A1.
+
 
 test1() ->
   Str = &a:a{},
@@ -69,4 +81,11 @@ test6() ->
   Str = &a:a{},
   As = get_as(Str),
   {a1_default, a2_default} = As,
+  ok.
+
+test7() ->
+  Str = &a:a{},
+  A1 = get_a12(Str),
+  a1_default = A1,
+  a1_default = get_a13(Str),
   ok.
