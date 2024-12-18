@@ -1,11 +1,17 @@
 -module(s).
 
--export([main/0]).
+-export([main/0, tests/0]).
 
 main() ->
+  tests(),
+  halt(0).
+
+tests() ->
   init_definitions(),
   test1(),
-  halt(0).
+  test2(),
+  test3(),
+  test4().
 
 init_definitions() ->
   struct_prototype:define(a,a,
@@ -22,8 +28,35 @@ tag(&a:a{}) ->
 tag(&a:b{}) ->
   b.
 
+get_a1(&a:a{a1 = A1}) ->
+  A1.
+
 test1() ->
   Str = &a:a{},
   Tag = tag(Str),
   a = Tag,
+  ok.
+
+test2() ->
+  Str = &a:a{},
+  A1 = get_a1(Str),
+  a1_default = A1,
+  ok.
+
+test3() ->
+  Str = &a:a{},
+  &a:a{} = Str,
+  ok.
+
+test4() ->
+  Str = &a:a{},
+  &a:a{a1 = A1} = Str,
+  a1_default = A1,
+  ok.
+
+%% bad_match
+test5() ->
+  Str = &a:a{},
+  &a:a{b1 = A1} = Str,
+  a1_default = A1,
   ok.
