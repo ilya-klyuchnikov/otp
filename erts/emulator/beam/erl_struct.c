@@ -569,6 +569,31 @@ Eterm struct_name(Eterm obj) {
     return entry->name;
 }
 
+Eterm struct_get_element(Eterm obj, Eterm key) {
+    /* Struct term, Key */
+    ErtsStructDefinition *defp;
+    int field_count;
+    Eterm *objp;
+
+    if (!is_struct(obj) ||
+        !is_atom(key)) {
+        return THE_NON_VALUE;
+    }
+
+    objp = struct_val(obj);
+    field_count = header_arity(objp[0]) - 1;
+    defp = (ErtsStructDefinition*)boxed_val(objp[1]);
+
+    for (int i = 0; i < field_count; i++) {
+        if (eq(key, defp->fields[i].key)) {
+            return objp[2 + i];
+        }
+    }
+
+    return THE_NON_VALUE;
+}
+
+
 BIF_RETTYPE struct_prototype_module_1(BIF_ALIST_1) {
     Eterm obj, *objp;
     ErtsStructDefinition *defp;

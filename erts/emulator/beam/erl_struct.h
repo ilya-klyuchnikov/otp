@@ -69,6 +69,7 @@ ErtsStructEntry *erts_struct_get_or_make_stub(Eterm module,
 
 Eterm struct_module(Eterm obj);
 Eterm struct_name(Eterm obj);
+Eterm struct_get_element(Eterm obj, Eterm key);
 
 void erts_struct_start_staging(void);
 void erts_struct_end_staging(int commit);
