@@ -11,7 +11,8 @@ tests() ->
   test1(),
   test2(),
   test3(),
-  test4().
+  test4(),
+  test6().
 
 init_definitions() ->
   struct_prototype:define(a,a,
@@ -30,6 +31,9 @@ tag(&a:b{}) ->
 
 get_a1(&a:a{a1 = A1}) ->
   A1.
+
+get_as(&a:a{a1 = A1, a2 = A2}) ->
+  {A1, A2}.
 
 test1() ->
   Str = &a:a{},
@@ -59,4 +63,10 @@ test5() ->
   Str = &a:a{},
   &a:a{b1 = A1} = Str,
   a1_default = A1,
+  ok.
+
+test6() ->
+  Str = &a:a{},
+  As = get_as(Str),
+  {a1_default, a2_default} = As,
   ok.
