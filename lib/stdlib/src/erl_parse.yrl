@@ -2305,6 +2305,27 @@ modify_anno1({Tag,A,E1}, Ac, Mf) ->
     {A1,Ac1} = Mf(A, Ac),
     {E11,Ac2} = modify_anno1(E1, Ac1, Mf),
     {{Tag,A1,E11},Ac2};
+%% struct_create, struct pattern
+modify_anno1({struct,A,N,Fs}, Ac, Mf) ->
+    {A1,Ac1} = Mf(A, Ac),
+    {Fs1,Ac2} = modify_anno1(Fs, Ac1, Mf),
+    {{struct,A1,N,Fs1},Ac2};
+%% struct_update
+modify_anno1({struct,A,E,N,Fs}, Ac, Mf) ->
+    {A1,Ac1} = Mf(A, Ac),
+    {E1,Ac2} = modify_anno1(E, Ac1, Mf),
+    {Fs1,Ac3} = modify_anno1(Fs, Ac2, Mf),
+    {{struct,A1,E1,N,Fs1},Ac3};
+%% struct_field
+modify_anno1({struct_field,A,N,F}, Ac, Mf) ->
+    {A1,Ac1} = Mf(A, Ac),
+    {F1,Ac2} = modify_anno1(F, Ac1, Mf),
+    {{struct_field,A1,N,F1},Ac2};
+%% struct_field_expr
+modify_anno1({struct_field_expr,A,E,N,FN}, Ac, Mf) ->
+    {A1,Ac1} = Mf(A, Ac),
+    {E1,Ac2} = modify_anno1(E, Ac1, Mf),
+    {{struct_field_expr,A1,E1,N,FN},Ac2};
 modify_anno1({Tag,A,E1,E2}, Ac, Mf) ->
     {A1,Ac1} = Mf(A, Ac),
     {E11,Ac2} = modify_anno1(E1, Ac1, Mf),
