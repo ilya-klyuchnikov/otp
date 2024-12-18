@@ -336,7 +336,7 @@ BIF_RETTYPE is_struct_1(BIF_ALIST_1)
     BIF_RET(am_false);
 }
 
-BIF_RETTYPE is_struct_3(BIF_ALIST_3)
+BIF_RETTYPE is_tagged_struct_3(BIF_ALIST_3)
 {
     Eterm obj = BIF_ARG_1;
     if (is_struct(obj) && BIF_ARG_2 == struct_module(obj) && BIF_ARG_3 == struct_name(obj)) {

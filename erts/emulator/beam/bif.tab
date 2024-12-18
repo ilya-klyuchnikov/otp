@@ -819,4 +819,4 @@ bif struct_prototype:module/1
 bif struct_prototype:name/1
 
 ubif erlang:is_struct/1
-ubif erlang:is_struct/3
+ubif erlang:is_tagged_struct/3

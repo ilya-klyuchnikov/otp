@@ -1920,9 +1920,8 @@ arg_val(Arg, C) ->
                          %% as intended.
                          erts_internal:cmp_term(A, B) < 0
                  end, [Key || #cg_map_pair{key=Key} <- Es]);
-        #cg_struct{mod = M, name = N} ->
-            %% TODO!!!
-            {M, N}
+        #cg_struct{mod = M, name = N, es=Es} ->
+            {M, N, sort([K || #cg_struct_pair{key = K} <- Es])}
     end.
 
 %%%
