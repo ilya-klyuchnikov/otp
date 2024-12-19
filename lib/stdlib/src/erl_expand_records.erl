@@ -352,6 +352,13 @@ expr({record,Anno,R,Name,Us}, St0) ->
     expr(Ue, St1);
 expr({struct, _Anno, {MName, Name}, Inits=[]}, St) ->
     {{struct, _Anno, {MName, Name}, Inits}, St};
+expr({struct_update,Anno,Arg0,N,Updates0}, St0) ->
+    {Arg1,St1} = expr(Arg0, St0),
+    {Updates1,St2} = expr_list(Updates0, St1),
+    {{struct_update,Anno,Arg1,N,Updates1},St2};
+expr({struct_field,Anno,K,E0}, St0) ->
+    {E1,St1} = expr(E0, St0),
+    {{struct_field,Anno,K,E1}, St1};
 expr({bin,Anno,Es0}, St0) ->
     {Es1,St1} = expr_bin(Es0, St0),
     {{bin,Anno,Es1},St1};

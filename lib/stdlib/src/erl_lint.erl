@@ -2627,8 +2627,10 @@ expr({struct, Anno, {_MName, _Name}, _Inits}, _Vt, St) ->
   {[],add_error(Anno, {struct_todo,init_fields}, St)};
 expr({struct, Anno, Name, _Inits}, _Vt, St) when is_atom(Name) ->
   {[],add_error(Anno, {struct_todo,import}, St)};
-expr({struct_update, Anno, _Expr, {MName, Name}, _Updates}, _Vt, St) when is_atom(MName),is_atom(Name) ->
-  {[],add_error(Anno, {struct_todo,update}, St)};
+expr({struct_update, _Anno, Expr, {MName, Name}, Updates}, Vt, St) when is_atom(MName),is_atom(Name) ->
+  {Rvt, St1} = expr(Expr, Vt, St),
+  {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
+  {vtmerge(Rvt, Usvt), St2};
 expr({struct_update, Anno, _Expr, Name, _Updates}, _Vt, St) when is_atom(Name) ->
   {[],add_error(Anno, {struct_todo,import}, St)};
 expr({struct_field_expr, Anno, _S, {_MName,_Name}, FieldName}, _Vt, St) when is_atom(FieldName) ->
@@ -3111,6 +3113,19 @@ pattern_struct_fields(Fs, Vt0, Old, St0) ->
       end
           end, {[],[],[],St0}, Fs),
   {Uvt,Unew,St1}.
+
+check_struct_fields(Fs, Vt0, St0) ->
+  CheckFun = fun expr/3,
+  {_SeenFields,Uvt,St1} =
+    foldl(
+      fun (Field, {Sfsa,Vta,Sta}) ->
+        {Sfsb,{Vtb,Stb}} = check_struct_field(Field, Vt0, Sta, Sfsa, CheckFun),
+        {Vt1, St1} = vtmerge_pat(Vta, Vtb, Stb),
+        {Sfsb, Vt1, St1}
+      end,
+      {[],[], St0},
+      Fs),
+  {Uvt,St1}.
 
 check_struct_field({struct_field, Af, F, Val}, Vt, St, Sfs, CheckFun) ->
   case member(F, Sfs) of
