@@ -228,12 +228,6 @@ expr(#c_map{anno=Anno,arg=V0,es=Es0}=Map, Ctxt, Sub) ->
     Es = pair_list(Es0, descend(Map, Sub)),
     V = expr(V0, value, Sub),
     ann_c_map(Anno, V, Es);
-expr(#c_struct{anno=Anno, mod = M, name = N, es=[]}=Struct, Ctxt, Sub) ->
-  case Ctxt of
-    effect -> warn_useless_building(Struct, Sub);
-    value -> ok
-  end,
-  #c_struct{anno=Anno, mod = M, name = N, es=[]};
 expr(#c_binary{segments=Ss}=Bin0, Ctxt, Sub) ->
     %% Warn for useless building, but always build the binary
     %% anyway to preserve a possible exception.

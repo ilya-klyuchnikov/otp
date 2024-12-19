@@ -350,8 +350,14 @@ expr({record_field,_A,R,Name,F}, St) ->
 expr({record,Anno,R,Name,Us}, St0) ->
     {Ue,St1} = record_update(R, Name, record_fields(Name, Anno, St0), Us, St0),
     expr(Ue, St1);
-expr({struct, _Anno, {MName, Name}, Inits=[]}, St) ->
-    {{struct, _Anno, {MName, Name}, Inits}, St};
+expr({struct, Anno, {MName, Name}, _Inits=[]}, St0) ->
+    Struct0 =
+        {call,
+            Anno,
+            {remote,Anno,{atom,Anno,struct_prototype},{atom,Anno,create}},
+            [{atom, Anno, MName},{atom, Anno, Name}]},
+    {Struct1, St1} = expr(Struct0, St0),
+    {Struct1, St1};
 expr({struct_update,Anno,Arg0,N,Updates0}, St0) ->
     {Arg1,St1} = expr(Arg0, St0),
     {Updates1,St2} = expr_list(Updates0, St1),

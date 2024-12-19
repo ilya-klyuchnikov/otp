@@ -702,8 +702,6 @@ expr({tuple,L,Es0}, St0) ->
     {annotate_tuple(A, Es1, St1),Eps,St1};
 expr({map,L,Es0}, St0) ->
     map_build_pairs(#c_literal{val=#{}}, Es0, full_anno(L, St0), St0);
-expr({struct, L, {M, N}, []}, St) ->
-  {#c_struct{anno=full_anno(L, St), mod=M, name=N, es=[]}, [], St};
 expr({map,L,M,Es}, St) ->
     expr_map(M, Es, L, St);
 expr({bin,L,Es0}, St0) ->

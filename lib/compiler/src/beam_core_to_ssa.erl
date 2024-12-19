@@ -329,15 +329,6 @@ expr(#c_let{vars=Cvs,arg=Ca,body=Cb}, Sub0, St0) ->
            end,
     {Kb,Pb,St3} = body(Cb, Sub1, St2),
     {Kb,Pa ++ Sets ++ Pb,St3};
-expr(#c_struct{anno=A, mod = M, name = N}, Sub, St) ->
-    Call =
-        #c_call{
-            anno=A,
-            module=#c_literal{val=struct_prototype},
-            name=#c_literal{val=create},
-            args=[#c_literal{val=M},#c_literal{val=N}]
-        },
-    expr(Call, Sub, St);
 expr(#c_letrec{anno=A,defs=Cfs,body=Cb}, Sub, St) ->
     case member(letrec_goto, A) of
         true ->
