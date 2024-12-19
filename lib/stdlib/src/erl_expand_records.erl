@@ -347,21 +347,24 @@ expr({record,Anno0,Name,Is}, St) ->
 expr({record_field,_A,R,Name,F}, St) ->
     Anno = erl_parse:first_anno(R),
     get_record_field(Anno, R, F, Name, St);
+expr({struct_field_expr, _A, Str, {Mod,Name}, F}, St) ->
+    Anno = erl_parse:first_anno(Str),
+    get_struct_field(Anno, Str, F, Mod, Name, St);
 expr({record,Anno,R,Name,Us}, St0) ->
     {Ue,St1} = record_update(R, Name, record_fields(Name, Anno, St0), Us, St0),
     expr(Ue, St1);
-expr({struct, Anno, {MName, Name}, _Inits=[]}, St0) ->
+expr({struct, Anno, {MName, SName}, Inits}, St0) ->
     Struct0 =
         {call,
             Anno,
             {remote,Anno,{atom,Anno,struct_prototype},{atom,Anno,create}},
-            [{atom, Anno, MName},{atom, Anno, Name}]},
+            [{atom, Anno, MName},{atom, Anno, SName}]},
     {Struct1, St1} = expr(Struct0, St0),
-    {Struct1, St1};
-expr({struct_update,Anno,Arg0,N,Updates0}, St0) ->
-    {Arg1,St1} = expr(Arg0, St0),
-    {Updates1,St2} = expr_list(Updates0, St1),
-    {{struct_update,Anno,Arg1,N,Updates1},St2};
+    {Ue, St2} = struct_init_update(Struct1, Anno, Inits, St1),
+    expr(Ue, St2);
+expr({struct_update,_A,Str,{M, N},Updates}, St0) ->
+    Anno = erl_parse:first_anno(Str),
+    update_struct_fields(Anno, Str, M, N, Updates, St0);
 expr({struct_field,Anno,K,E0}, St0) ->
     {E1,St1} = expr(E0, St0),
     {{struct_field,Anno,K,E1}, St1};
@@ -694,6 +697,31 @@ strict_get_record_field(Anno, R, {atom,_,F}=Index, Name, St0) ->
 	      [I,ExpR]},St2}
     end.
 
+get_struct_field(Anno, Str, F, Mod, Name, St0) ->
+    {Var,St} = new_var(Anno, St0),
+    NAnno = no_compiler_warning(Anno),
+    E = {'case',Anno,Str,
+           [{clause,NAnno,[{struct,NAnno,{Mod, Name}, [{struct_field, NAnno, F, Var}]}],[],[Var]},
+            {clause,NAnno,[Var],[],
+                [{call,NAnno,{remote,NAnno,
+                    {atom,NAnno,erlang},
+                    {atom,NAnno,error}},
+                    [{tuple,NAnno,[{atom,NAnno,badstruct},Var]}]}]}]},
+    expr(E, St).
+
+update_struct_fields(Anno, Str, Mod, Name, Us, St0) ->
+    {Var,St1} = new_var(Anno, St0),
+    NAnno = no_compiler_warning(Anno),
+    {UEs, St2} = struct_update_update(Var, NAnno, Us, St1),
+    E = {'case',Anno,Str,
+        [{clause,NAnno,[{match, NAnno, Var, {struct,NAnno,{Mod, Name}, []}}],[],UEs},
+            {clause,NAnno,[Var],[],
+                [{call,NAnno,{remote,NAnno,
+                    {atom,NAnno,erlang},
+                    {atom,NAnno,error}},
+                    [{tuple,NAnno,[{atom,NAnno,badstruct},Var]}]}]}]},
+    expr(E, St2).
+
 record_pattern(I, I, Var, Sz, Anno, Acc) ->
     record_pattern(I+1, I, Var, Sz, Anno, [Var | Acc]);
 record_pattern(Cur, I, Var, Sz, Anno, Acc) when Cur =< Sz ->
@@ -781,6 +809,25 @@ record_update(R, Name, Fs, Us0, St0) ->
         end,
     {{block,Anno,Pre ++ [{match,Anno,Var,R},Update]},St}.
 
+struct_init_update(Str, Anno, Us0, St0) ->
+    {Pre,Us,St1} = struct_exprs(Us0, St0),
+    {Var,St2} = new_var(Anno, St1),
+    Update =
+        foldr(fun ({struct_field,A,N,Val}, Acc) ->
+                {call,A,{remote,A,{atom,A,struct_prototype}, {atom,A,update}},[Acc,{atom,A,N},Val]} end,
+            Var,
+            Us),
+    {{block,Anno,Pre ++ [{match,Anno,Var,Str},Update]},St2}.
+
+struct_update_update(Var, A, Us0, St0) ->
+    {Pre,Us,St1} = struct_exprs(Us0, St0),
+    Update =
+        foldr(fun ({struct_field,_,N,Val}, Acc) ->
+            {call,A,{remote,A,{atom,A,struct_prototype}, {atom,A,update}},[Acc,{atom,A,N},Val]} end,
+            Var,
+            Us),
+    {Pre ++ [Update],St1}.
+
 %% record_match(Record, RecordName, Anno, [RecDefField], [Update], State)
 %%  Build a 'case' expression to modify record fields.
 
@@ -861,6 +908,22 @@ record_exprs([{record_field,Anno,{atom,_AnnoA,_F}=Name,Val}=Field0 | Us], St0, P
             record_exprs(Us, St, [Bind | Pre], [Field | Fs])
     end;
 record_exprs([], St, Pre, Fs) ->
+    {reverse(Pre),Fs,St}.
+
+struct_exprs(Us, St) ->
+    struct_exprs(Us, St, [], []).
+
+struct_exprs([{struct_field,Anno,Name,Val}=Field0 | Us], St0, Pre, Fs) ->
+    case is_simple_val(Val) of
+        true ->
+            struct_exprs(Us, St0, Pre, [Field0 | Fs]);
+        false ->
+            {Var,St} = new_var(Anno, St0),
+            Bind = {match,Anno,Var,Val},
+            Field = {struct_field,Anno,Name,Var},
+            struct_exprs(Us, St, [Bind | Pre], [Field | Fs])
+    end;
+struct_exprs([], St, Pre, Fs) ->
     {reverse(Pre),Fs,St}.
 
 is_simple_val({var,_,_}) -> true;

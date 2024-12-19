@@ -2621,10 +2621,9 @@ expr({record,Anno,Name,Inits}, Vt, St) ->
                  fun (Dfs, St1) ->
                          init_fields(Inits, Anno, Name, Dfs, Vt, St1)
                  end);
-expr({struct, _Anno, {_MName, _Name}, _Inits=[]}, _Vt, St) ->
-  {[],St};
-expr({struct, Anno, {_MName, _Name}, _Inits}, _Vt, St) ->
-  {[],add_error(Anno, {struct_todo,init_fields}, St)};
+expr({struct, _Anno, {MName, Name}, Inits}, Vt, St) when is_atom(MName),is_atom(Name) ->
+  {Usvt, St1} = check_struct_fields(Inits, Vt, St),
+  {Usvt, St1};
 expr({struct, Anno, Name, _Inits}, _Vt, St) when is_atom(Name) ->
   {[],add_error(Anno, {struct_todo,import}, St)};
 expr({struct_update, _Anno, Expr, {MName, Name}, Updates}, Vt, St) when is_atom(MName),is_atom(Name) ->
@@ -2633,8 +2632,8 @@ expr({struct_update, _Anno, Expr, {MName, Name}, Updates}, Vt, St) when is_atom(
   {vtmerge(Rvt, Usvt), St2};
 expr({struct_update, Anno, _Expr, Name, _Updates}, _Vt, St) when is_atom(Name) ->
   {[],add_error(Anno, {struct_todo,import}, St)};
-expr({struct_field_expr, Anno, _S, {_MName,_Name}, FieldName}, _Vt, St) when is_atom(FieldName) ->
-  {[],add_error(Anno, {struct_todo,field_expr}, St)};
+expr({struct_field_expr, _Anno, Str, {_MName,_Name}, FieldName}, Vt, St) when is_atom(FieldName) ->
+  expr(Str, Vt, St);
 expr({struct_field_expr, Anno, _S, Name, FieldName}, _Vt, St) when is_atom(Name),is_atom(FieldName) ->
   {[],add_error(Anno, {struct_todo,import}, St)};
 expr({record_field,Anno,Rec,Name,Field}, Vt, St0) ->
