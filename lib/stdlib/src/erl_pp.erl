@@ -687,6 +687,11 @@ lexpr({record, _, Name, Fs}, Prec, Opts) ->
     Nl = record_name(Name),
     El = {first,Nl,record_fields(Fs, Opts)},
     maybe_paren(P, Prec, El);
+lexpr({struct, _, N, Fs}, Prec, Opts) ->
+    {P,_R} = preop_prec('&'),
+    Nl = struct_name(N),
+    El = {first,Nl,struct_fields(Fs, Opts)},
+    maybe_paren(P, Prec, El);
 lexpr({record_field, _, Rec, Name, F}, Prec, Opts) ->
     {L,P,R} = inop_prec('#'),
     Rl = lexpr(Rec, L, Opts),
@@ -919,8 +924,16 @@ bit_elem_type(T) ->
 record_name(Name) ->
     [$#,{atom,Name}].
 
+struct_name({M, N}) when is_atom(M), is_atom(N) ->
+    [$#,{atom,M},$:,{atom,N}];
+struct_name(M) when is_atom(M) ->
+    [$#,{atom,M}].
+
 record_fields(Fs, Opts) ->
     tuple(Fs, fun record_field/2, Opts).
+
+struct_fields(Fs, Opts) ->
+  tuple(Fs, fun struct_field/2, Opts).
 
 record_field({record_field,_,F,Val}, Opts) ->
     {L,_P,R} = inop_prec('='),
@@ -936,6 +949,12 @@ record_field({typed_record_field,Field,Type}, Opts) ->
     typed(record_field(Field, Opts), Type);
 record_field({record_field,_,F}, Opts) ->
     lexpr(F, 0, Opts).
+
+struct_field({struct_field,_,F,Val}, Opts) ->
+  {_L,_P,R} = inop_prec('='),
+  Fl = {atom, F},
+  Vl = lexpr(Val, R, Opts),
+  {list,[{cstep,[Fl,' ='],Vl}]}.
 
 map_fields(Fs, Opts) ->
     tuple(Fs, fun map_field/2, Opts).
