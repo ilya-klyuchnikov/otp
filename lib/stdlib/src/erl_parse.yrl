@@ -437,9 +437,9 @@ struct_expr -> expr_max '&' atom '.' atom :
 %% {struct, Anno, Expr, {M, N}, Pairs}
 %% {struct, Anno, Expr, N, Pairs}
 struct_expr -> expr_max '&' atom ':' atom struct_tuple :
-	{struct,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
+	{struct_update,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
 struct_expr -> expr_max '&' atom struct_tuple :
-	{struct,?anno('$2'),'$1',element(3, '$3'),'$4'}.
+	{struct_update,?anno('$2'),'$1',element(3, '$3'),'$4'}.
 
 %% updating a struct
 struct_expr -> struct_expr '&' atom ':' atom struct_tuple :
@@ -2311,11 +2311,11 @@ modify_anno1({struct,A,N,Fs}, Ac, Mf) ->
     {Fs1,Ac2} = modify_anno1(Fs, Ac1, Mf),
     {{struct,A1,N,Fs1},Ac2};
 %% struct_update
-modify_anno1({struct,A,E,N,Fs}, Ac, Mf) ->
+modify_anno1({struct_update,A,E,N,Fs}, Ac, Mf) ->
     {A1,Ac1} = Mf(A, Ac),
     {E1,Ac2} = modify_anno1(E, Ac1, Mf),
     {Fs1,Ac3} = modify_anno1(Fs, Ac2, Mf),
-    {{struct,A1,E1,N,Fs1},Ac3};
+    {{struct_update,A1,E1,N,Fs1},Ac3};
 %% struct_field
 modify_anno1({struct_field,A,N,F}, Ac, Mf) ->
     {A1,Ac1} = Mf(A, Ac),

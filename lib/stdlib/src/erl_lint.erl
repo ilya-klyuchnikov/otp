@@ -2627,9 +2627,9 @@ expr({struct, Anno, {_MName, _Name}, _Inits}, _Vt, St) ->
   {[],add_error(Anno, {struct_todo,init_fields}, St)};
 expr({struct, Anno, Name, _Inits}, _Vt, St) when is_atom(Name) ->
   {[],add_error(Anno, {struct_todo,import}, St)};
-expr({struct, Anno, _Expr, {MName, Name}, _Updates}, _Vt, St) when is_atom(MName),is_atom(Name) ->
+expr({struct_update, Anno, _Expr, {MName, Name}, _Updates}, _Vt, St) when is_atom(MName),is_atom(Name) ->
   {[],add_error(Anno, {struct_todo,update}, St)};
-expr({struct, Anno, _Expr, Name, _Updates}, _Vt, St) when is_atom(Name) ->
+expr({struct_update, Anno, _Expr, Name, _Updates}, _Vt, St) when is_atom(Name) ->
   {[],add_error(Anno, {struct_todo,import}, St)};
 expr({struct_field_expr, Anno, _S, {_MName,_Name}, FieldName}, _Vt, St) when is_atom(FieldName) ->
   {[],add_error(Anno, {struct_todo,field_expr}, St)};
