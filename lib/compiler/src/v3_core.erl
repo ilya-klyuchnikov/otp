@@ -2156,7 +2156,10 @@ pattern({map,L,Pairs}, St0) ->
     {#imap{anno=#a{anno=lineno_anno(L, St1)},es=Ps},St1};
 pattern({struct,L,{M,N},Pairs},St0) ->
     {Ps,St1} = pattern_struct_pairs(Pairs, St0),
-    {#c_struct{anno=lineno_anno(L, St1),mod=M,name=N,es=Ps},St1};
+    {#c_struct{anno=lineno_anno(L, St1),id={M,N},es=Ps},St1};
+pattern({struct,L,{},Pairs},St0) ->
+  {Ps,St1} = pattern_struct_pairs(Pairs, St0),
+  {#c_struct{anno=lineno_anno(L, St1),id={},es=Ps},St1};
 pattern({bin,L,Ps}, St0) ->
     {Segments,St} = pat_bin(Ps, St0),
     {#ibinary{anno=#a{anno=lineno_anno(L, St)},segments=Segments},St};

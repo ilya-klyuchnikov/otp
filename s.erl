@@ -29,6 +29,8 @@ tests() ->
   test16(),
   test17(),
   test18(),
+  test19(),
+  test20(),
   ok.
 
 init_definitions() ->
@@ -178,8 +180,11 @@ test12() ->
   Str1 = &a:a{a1 = 1},
   Str2 = &a:a{},
   a1 = is_aa1(Str1),
+  a1 = is_aa12(Str1),
   no = is_aa1(Str2),
-  no = is_aa1([]).
+  no = is_aa12(Str2),
+  no = is_aa1([]),
+  no = is_aa12([]).
 
 test13() ->
   Str1 = &a:a{a1 = 1},
@@ -229,6 +234,17 @@ test18() ->
     [A] = [X || X <- AB, id(X&a:a.a1 == a)]
   catch _:_ -> fail end.
 
+test19() ->
+  A = &a:a{a1 = a},
+  {ok, a} = get_any_a1(A),
+  no = get_any_a1({}),
+  a = get_any_a2(A),
+  a = get_any_a3(A).
+
+test20() ->
+  A = &a:a{},
+  A1 = A&{a1 = a1, a2 = a2},
+  &{a1 = a1} = A1.
 
 match1(&a:a{a1 = a1}, &a:b{b1 = b1}) ->
   f1;
@@ -246,7 +262,21 @@ is_aa1(X) when X&a:a.a1 == 1 ->
 is_aa1(_) ->
   no.
 
+is_aa12(X) when X&.a1 == 1 ->
+  a1;
+is_aa12(_) ->
+  no.
+
 is_a_call(X) when struct_name(X) == a ->
   yes;
 is_a_call(_) ->
   no.
+
+get_any_a1(&{a1 = A}) -> {ok, A};
+get_any_a1(_) -> no.
+
+get_any_a2(S) ->
+  S&.a1.
+
+get_any_a3(S) ->
+  S&.a1.

@@ -97,7 +97,7 @@
 -record(cg_tuple, {es}).
 -record(cg_map, {var=#b_literal{val=#{}},op,es}).
 -record(cg_map_pair, {key,val}).
--record(cg_struct, {mod, name, es}).
+-record(cg_struct, {id, es}).
 -record(cg_struct_pair, {key,val}).
 -record(cg_cons, {hd,tl}).
 -record(cg_binary, {segs}).
@@ -761,9 +761,12 @@ pattern(#c_tuple{es=Ces}, Sub0, St0) ->
 pattern(#c_map{es=Ces}, Sub0, St0) ->
     {Kes,Sub1,St1} = pattern_map_pairs(Ces, Sub0, St0),
     {#cg_map{op=exact,es=Kes},Sub1,St1};
-pattern(#c_struct{mod = M, name = N, es=Ces}, Sub0, St0) ->
+pattern(#c_struct{id = {M, N}, es=Ces}, Sub0, St0) ->
     {Kes,Sub1,St1} = pattern_struct_pairs(Ces, Sub0, St0),
-    {#cg_struct{mod = M, name = N, es=Kes},Sub1,St1};
+    {#cg_struct{id = {M, N}, es=Kes},Sub1,St1};
+pattern(#c_struct{id = {}, es=Ces}, Sub0, St0) ->
+    {Kes,Sub1,St1} = pattern_struct_pairs(Ces, Sub0, St0),
+    {#cg_struct{id = {}, es=Kes},Sub1,St1};
 pattern(#c_binary{segments=Cv}, Sub0, St0) ->
     {Kv,Sub1,St1} = pattern_bin(Cv, Sub0, St0),
     {#cg_binary{segs=Kv},Sub1,St1};
@@ -1669,14 +1672,14 @@ get_match(#cg_map{op=exact,es=Es0}, St0) ->
                               {Pair#cg_map_pair{val=V},Vs}
                       end, Mes, Es0),
     {#cg_map{op=exact,es=Es},Mes,St1};
-get_match(#cg_struct{mod=M, name =N, es=Es0}, St0) ->
+get_match(#cg_struct{id=Id, es=Es0}, St0) ->
     {Mes,St1} = new_vars(length(Es0), St0),
     F =
       fun(#cg_struct_pair{}=Pair, [V|Vs]) ->
         {Pair#cg_struct_pair{val=V},Vs}
       end,
     {Es,_} = mapfoldl(F, Mes, Es0),
-    {#cg_struct{mod=M,name=N,es=Es},Mes,St1};
+    {#cg_struct{id=Id,es=Es},Mes,St1};
 get_match(M, St) ->
     {M,[],St}.
 
@@ -1926,8 +1929,8 @@ arg_val(Arg, C) ->
                          %% as intended.
                          erts_internal:cmp_term(A, B) < 0
                  end, [Key || #cg_map_pair{key=Key} <- Es]);
-        #cg_struct{mod = M, name = N, es=Es} ->
-            {M, N, sort([K || #cg_struct_pair{key = K} <- Es])}
+        #cg_struct{id = Id, es=Es} ->
+            {Id, sort([K || #cg_struct_pair{key = K} <- Es])}
     end.
 
 %%%
@@ -2748,18 +2751,22 @@ select_extract_map([], _, _, St) ->
 
 select_struct(Scs, StructSrc, Tf, Vf, St0) ->
     F =
-      fun(#cg_val_clause{val=#cg_struct{mod=M,name=N,es=Es}, body=B}, Fail, St1) ->
-        select_struct_val(StructSrc, M, N, Es, B, Fail, St1)
+      fun(#cg_val_clause{val=#cg_struct{id=Id,es=Es}, body=B}, Fail, St1) ->
+        select_struct_val(StructSrc, Id, Es, B, Fail, St1)
       end,
     {Is,St1} = match_fmf(F, Vf, St0, Scs),
     {TestIs,St} = make_cond_branch({bif,is_struct}, [StructSrc], Tf, St1),
     {TestIs++Is,St}.
 
-select_struct_val(StrSrc, M, N, Es, B, Fail, St0) ->
+select_struct_val(StrSrc, {M, N}, Es, B, Fail, St0) ->
     {TestIs,St1} = make_cond_branch({bif,is_tagged_struct}, [StrSrc, #b_literal{val = M}, #b_literal{val = N}], Fail, St0),
     {Eis,St2} = select_extract_struct(Es, StrSrc, Fail, St1),
     {Bis,St3} = match_cg(B, Fail, St2),
-    {TestIs++Eis++Bis,St3}.
+    {TestIs++Eis++Bis,St3};
+select_struct_val(StrSrc, {}, Es, B, Fail, St0) ->
+    {Eis,St1} = select_extract_struct(Es, StrSrc, Fail, St0),
+    {Bis,St2} = match_cg(B, Fail, St1),
+    {Eis++Bis,St2}.
 
 select_extract_struct([P|Ps], StrSrc, Fail, St0) ->
     #cg_struct_pair{key=Key,val=Dst} = P,

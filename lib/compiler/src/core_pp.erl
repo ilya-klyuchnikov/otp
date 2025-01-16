@@ -200,8 +200,12 @@ format_1(#c_map{arg=Var,es=Es}, Ctxt) ->
      "|",format(Var, add_indent(Ctxt, 1)),
      "}~"
     ];
-format_1(#c_struct{mod = M, name = N, es = Es}, Ctxt) ->
+format_1(#c_struct{id = {M, N}, es = Es}, Ctxt) ->
   ["&" ++ atom_to_list(M) ++ ":" ++ atom_to_list(N) ++ "{",
+    format_hseq(Es, ",", add_indent(Ctxt, 1), fun format/2),
+    "}"];
+format_1(#c_struct{id = {}, es = Es}, Ctxt) ->
+  ["&" ++ "{",
     format_hseq(Es, ",", add_indent(Ctxt, 1), fun format/2),
     "}"];
 format_1(#c_struct_pair{key=K,val=V}, Ctxt) ->

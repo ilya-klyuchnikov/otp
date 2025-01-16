@@ -433,6 +433,9 @@ struct_expr -> '&' atom ':' atom struct_tuple :
 	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$5'}.
 struct_expr -> '&' atom struct_tuple :
 	{struct,?anno('$1'),element(3, '$2'),'$3'}.
+struct_expr -> '&' struct_tuple :
+    % {} as a special marker
+	{struct,?anno('$1'), {},'$2'}.
 
 %% accessing a struct field
 %% {struct_field_expr, Anno, E, {Ma, Na}, Fa}
@@ -441,6 +444,8 @@ struct_expr -> expr_max '&' atom ':' atom '.' atom :
 	{struct_field_expr,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},element(3, '$7')}.
 struct_expr -> expr_max '&' atom '.' atom :
 	{struct_field_expr,?anno('$2'),'$1',element(3, '$3'),element(3, '$5')}.
+struct_expr -> expr_max '&' '.' atom :
+	{struct_field_expr,?anno('$2'),'$1',{},element(3, '$4')}.
 
 %% updating a struct
 %% {struct, Anno, Expr, {M, N}, Pairs}
@@ -449,17 +454,22 @@ struct_expr -> expr_max '&' atom ':' atom struct_tuple :
 	{struct_update,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
 struct_expr -> expr_max '&' atom struct_tuple :
 	{struct_update,?anno('$2'),'$1',element(3, '$3'),'$4'}.
-
-%% updating a struct
+struct_expr -> expr_max '&' struct_tuple :
+	{struct_update,?anno('$2'),'$1',{},'$3'}.
 struct_expr -> struct_expr '&' atom ':' atom struct_tuple :
-	{struct,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
+	{struct_update,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
 struct_expr -> struct_expr '&' atom struct_tuple :
-	{struct,?anno('$2'),'$1',element(3, '$3'),'$4'}.
+	{struct_update,?anno('$2'),'$1',element(3, '$3'),'$4'}.
+struct_expr -> struct_expr '&' struct_tuple :
+    	{struct_update,?anno('$2'),'$1',{},'$3'}.
 
 struct_pat_expr -> '&' atom ':' atom struct_tuple :
 	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$5'}.
 struct_pat_expr -> '&' atom struct_tuple :
 	{struct,?anno('$1'),element(3, '$2'),'$3'}.
+struct_pat_expr -> '&' struct_tuple :
+    % {} as a special marker
+	{struct,?anno('$1'), {},'$2'}.
 
 struct_fields -> struct_field : ['$1'].
 struct_fields -> struct_field ',' struct_fields : ['$1' | '$3'].

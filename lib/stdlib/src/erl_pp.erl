@@ -945,7 +945,9 @@ record_field({record_field,_,F}, Opts) ->
 struct_name({M, N}) when is_atom(M), is_atom(N) ->
   [$&,{atom,M},$:,{atom,N}];
 struct_name(M) when is_atom(M) ->
-  [$&,{atom,M}].
+  [$&,{atom,M}];
+struct_name({}) ->
+  [$&].
 
 struct_fields(Fs, Opts) ->
   tuple(Fs, fun struct_field/2, Opts).

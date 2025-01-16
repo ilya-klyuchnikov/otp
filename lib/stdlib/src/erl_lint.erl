@@ -2010,6 +2010,8 @@ pattern({struct, _Anno, {_Mod, _Name}, Fs}, Vt, Old, St) ->
 pattern({struct, Anno, Name, Fs}, Vt, Old, St) when is_atom(Name) ->
   St1 = call_struct(Anno, Name, St),
   pattern_struct_fields(Fs, Vt, Old, St1);
+pattern({struct, _Anno, {}, Fs}, Vt, Old, St) ->
+  pattern_struct_fields(Fs, Vt, Old, St);
 pattern({bin,_,Fs}, Vt, Old, St) ->
     pattern_bin(Fs, Vt, Old, St);
 pattern({op,_Anno,'++',{nil,_},R}, Vt, Old, St) ->
@@ -2368,7 +2370,10 @@ gexpr({record,Anno,Name,Inits}, Vt, St) ->
 gexpr({struct_field_expr, _Anno, Str, {_MName,_Name}, FieldName}, Vt, St0) when is_atom(FieldName) ->
   {Rvt,St1} = gexpr(Str, Vt, St0),
   {Rvt,St1};
-gexpr({struct_field_expr, Anno, Str, Name, FieldName}, Vt, St0) when is_atom(FieldName) ->
+gexpr({struct_field_expr, _Anno, Str, {}, FieldName}, Vt, St0) when is_atom(FieldName) ->
+  {Rvt,St1} = gexpr(Str, Vt, St0),
+  {Rvt,St1};
+gexpr({struct_field_expr, Anno, Str, Name, FieldName}, Vt, St0) when is_atom(Name), is_atom(FieldName) ->
   St1 = call_struct(Anno, Name, St0),
   {Rvt,St2} = gexpr(Str, Vt, St1),
   {Rvt,St2};
@@ -2692,7 +2697,14 @@ expr({struct_update, Anno, Expr, Name, Updates}, Vt, St) when is_atom(Name) ->
   Usvt1 = vtmerge(Rvt, Usvt),
   St3 = call_struct(Anno, Name, St2),
   {Usvt1, St3};
+expr({struct_update, _Anno, Expr, {}, Updates}, Vt, St) ->
+  {Rvt, St1} = expr(Expr, Vt, St),
+  {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
+  Usvt1 = vtmerge(Rvt, Usvt),
+  {Usvt1, St2};
 expr({struct_field_expr, _Anno, Str, {_MName,_Name}, FieldName}, Vt, St) when is_atom(FieldName) ->
+  expr(Str, Vt, St);
+expr({struct_field_expr, _Anno, Str, {}, FieldName}, Vt, St) when is_atom(FieldName) ->
   expr(Str, Vt, St);
 expr({struct_field_expr, Anno, Str, Name, FieldName}, Vt, St) when is_atom(Name),is_atom(FieldName) ->
   {Usvt, St1} = expr(Str, Vt, St),
