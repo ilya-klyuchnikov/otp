@@ -1423,6 +1423,10 @@ parse_term(Tokens) ->
 build_typed_attribute({atom,Aa,record},
 		      {typed_record, {atom,_An,RecordName}, RecTuple}) ->
     {attribute,Aa,record,{RecordName,record_tuple(RecTuple)}};
+% TODO - typed fields
+% build_typed_attribute({atom,Aa,struct},
+% 		      {struct, {atom,_An,StructName}, StructTuple}) ->
+%    {attribute,Aa,struct,{StructName,struct_tuple(StructTuple)}};
 build_typed_attribute({atom,Aa,Attr},
                       {type_def, {call,_,{atom,_,TypeName},Args}, Type})
   when Attr =:= 'type' ; Attr =:= 'opaque' ->
@@ -1438,6 +1442,7 @@ build_typed_attribute({atom,Aa,Attr}=Abstr,_) ->
     case Attr of
         record -> error_bad_decl(Abstr, record);
         type   -> error_bad_decl(Abstr, type);
+        struct -> error_bad_decl(Abstr, struct);
 	opaque -> error_bad_decl(Abstr, opaque);
         _      -> ret_err(Aa, "bad attribute")
     end.
@@ -1557,6 +1562,12 @@ build_attribute({atom,Aa,record}, Val) ->
 	    {attribute,Aa,record,{Record,record_tuple(RecTuple)}};
         [Other|_] -> error_bad_decl(Other, record)
     end;
+build_attribute({atom,Aa,struct}, Val) ->
+    case Val of
+	[{atom,_An,Struct},StructTuple] ->
+	    {attribute,Aa,struct,{Struct,struct_tuple(StructTuple)}};
+        [Other|_] -> error_bad_decl(Other, struct)
+    end;
 build_attribute({atom,Aa,file}, Val) ->
     case Val of
 	[{string,_An,Name},{integer,_Al,Line}] ->
@@ -1663,6 +1674,11 @@ record_tuple({tuple,_At,Fields}) ->
 record_tuple(Other) ->
     ret_abstr_err(Other, "bad record declaration").
 
+struct_tuple({tuple,_At,Fields}) ->
+    struct_fields(Fields);
+struct_tuple(Other) ->
+    ret_abstr_err(Other, "bad struct declaration").
+
 record_fields([{atom,Aa,A}|Fields]) ->
     [{record_field,Aa,{atom,Aa,A}}|record_fields(Fields)];
 record_fields([{match,_Am,{atom,Aa,A},Expr}|Fields]) ->
@@ -1673,6 +1689,17 @@ record_fields([{typed,Expr,TypeInfo}|Fields]) ->
 record_fields([Other|_Fields]) ->
     ret_abstr_err(Other, "bad record field");
 record_fields([]) -> [].
+
+struct_fields([{atom,Aa,A}|Fields]) ->
+    [{struct_def_field,Aa,{atom,Aa,A}}|struct_fields(Fields)];
+struct_fields([{match,_Am,{atom,Aa,A},Expr}|Fields]) ->
+    [{struct_def_field,Aa,{atom,Aa,A},Expr}|struct_fields(Fields)];
+struct_fields([{typed,Expr,TypeInfo}|Fields]) ->
+    [Field] = struct_fields([Expr]),
+    [{typed_struct_def_field,Field,TypeInfo}|struct_fields(Fields)];
+struct_fields([Other|_Fields]) ->
+    ret_abstr_err(Other, "bad struct field");
+struct_fields([]) -> [].
 
 term(Expr) ->
     try normalise(Expr)

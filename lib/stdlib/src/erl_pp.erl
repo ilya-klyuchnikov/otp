@@ -433,6 +433,9 @@ lattribute(file, {Name,Anno}, _Opts) ->
 lattribute(record, {Name,Is}, Opts) ->
     Nl = [leaf("-record("),{atom,Name},$,],
     [{first,Nl,record_fields(Is, Opts)},$)];
+lattribute(struct, {Name,Is}, Opts) ->
+  Nl = [leaf("-struct("),{atom,Name},$,],
+  [{first,Nl,struct_def_fields(Is, Opts)},$)];
 lattribute(Name, Arg, Options) ->
     attr(Name, [abstract(Arg, Options)]).
 
@@ -941,6 +944,24 @@ record_field({typed_record_field,Field,Type}, Opts) ->
     typed(record_field(Field, Opts), Type);
 record_field({record_field,_,F}, Opts) ->
     lexpr(F, 0, Opts).
+
+struct_def_fields(Fs, Opts) ->
+  tuple(Fs, fun struct_def_field/2, Opts).
+struct_def_field({struct_def_field,_,F,Val}, Opts) ->
+  {L,_P,R} = inop_prec('='),
+  Fl = lexpr(F, L, Opts),
+  Vl = lexpr(Val, R, Opts),
+  {list,[{cstep,[Fl,' ='],Vl}]};
+struct_def_field({typed_struct_def_field,{struct_def_field,_,F,Val},Type}, Opts) ->
+  {L,_P,R} = inop_prec('='),
+  Fl = lexpr(F, L, Opts),
+  Vl = typed(lexpr(Val, R, Opts), Type),
+  {list,[{cstep,[Fl,' ='],Vl}]};
+struct_def_field({typed_struct_def_field,Field,Type}, Opts) ->
+  typed(struct_def_field(Field, Opts), Type);
+struct_def_field({record_field,_,F}, Opts) ->
+  lexpr(F, 0, Opts).
+
 
 struct_name({M, N}) when is_atom(M), is_atom(N) ->
   [$&,{atom,M},$:,{atom,N}];
