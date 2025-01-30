@@ -181,6 +181,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                    :: #{atom() => {anno(),Fields :: term()}},
                locals=gb_sets:empty()     %All defined functions (prescanned)
                    :: gb_sets:set(fa()),
+               struct_locals=gb_sets:empty() :: gb_sets:set(atom()),
                no_auto=gb_sets:empty() %Functions explicitly not autoimported
                    :: gb_sets:set(fa()) | 'all',
                defined=gb_sets:empty()          %Defined fuctions
@@ -284,6 +285,8 @@ format_error_1({redefine_import,{{F,A},M}}) ->
     {~"function ~tw/~w already imported from ~w", [F,A,M]};
 format_error_1({redefine_struct_import,{S,M}}) ->
     {~"struct ~tw already imported from ~w", [S,M]};
+format_error_1({redefine_struct_import,S}) when is_atom(S) ->
+    {~"struct ~tw defined locally", [S]};
 format_error_1({bad_inline,{F,A}}) ->
     {~"inlined function ~tw/~w undefined", [F,A]};
 format_error_1({undefined_nif,{F,A}}) ->
@@ -918,9 +921,11 @@ forms(Forms0, St0) ->
     Forms = eval_file_attribute(Forms0, St0),
     %% Annotations from now on include the 'file' item.
     Locals = local_functions(Forms),
+    StructLocals = local_structs(Forms),
     AutoImportSuppressed = auto_import_suppressed(St0#lint.compile),
     StDeprecated = disallowed_compile_flags(Forms,St0),
     St1 = includes_qlc_hrl(Forms, StDeprecated#lint{locals = Locals,
+                struct_locals = StructLocals,
 						    no_auto = AutoImportSuppressed}),
     St2 = bif_clashes(Forms, St1),
     St3 = not_deprecated(Forms, St2),
@@ -1813,19 +1818,23 @@ add_imports(Mod, Fs, Is) ->
 import_struct(Anno, {Mod, Ss}, St00) ->
   St = check_module_name(Mod, Anno, St00),
   Mss = ordsets:from_list(Ss),
-  case check_struct_imports(Anno, Mss, St#lint.struct_imports) of
+  case check_struct_imports(Anno, Mss, St#lint.struct_imports, St#lint.struct_locals) of
     [] ->
       St#lint{struct_imports = add_struct_imports(Mod, Mss, St#lint.struct_imports)};
     Es ->
       foldl(fun(E, St0) -> add_error(Anno, {redefine_struct_import, E}, St0) end, St, Es)
   end.
 
-check_struct_imports(_Anno, Ss, Is) ->
+check_struct_imports(_Anno, Ss, Is, Locals) ->
   foldl(fun (S, Efs) ->
-    case orddict:find(S, Is) of
-      {ok,Mod} -> [{S,Mod}|Efs];
-      error -> Efs
-    end
+    case gb_sets:is_element(S, Locals) of
+      true -> [S|Efs];
+      false ->
+        case orddict:find(S, Is) of
+          {ok,Mod} -> [{S,Mod}|Efs];
+          error -> Efs
+        end
+        end
         end, [], Ss).
 
 add_struct_imports(Mod, Ss, Is) ->
@@ -4931,6 +4940,8 @@ control_type(_C, _Need) -> error.
 %% Prebuild set of local functions (to override auto-import)
 local_functions(Forms) ->
     gb_sets:from_list([ {Func,Arity} || {function,_,Func,Arity,_} <- Forms ]).
+local_structs(Forms) ->
+  gb_sets:from_list([ Name || {attribute, _, struct, {Name,_StrTuple}} <- Forms ]).
 %% Predicate to find out if the function is locally defined
 is_local_function(LocalSet,{Func,Arity}) ->
     gb_sets:is_element({Func,Arity},LocalSet).
