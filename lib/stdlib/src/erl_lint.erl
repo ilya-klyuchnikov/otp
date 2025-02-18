@@ -179,6 +179,8 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                compile=[],                      %Compile flags
                records=maps:new()               %Record definitions
                    :: #{atom() => {anno(),Fields :: term()}},
+               structs=maps:new()
+                   :: #{atom() => {anno(),Fields :: term()}},
                locals=gb_sets:empty()     %All defined functions (prescanned)
                    :: gb_sets:set(fa()),
                struct_locals=gb_sets:empty() :: gb_sets:set(atom()),
@@ -422,6 +424,8 @@ format_error_1({undefined_struct,T}) ->
     {~"struct ~tw undefined", [T]};
 format_error_1({redefine_record,T}) ->
     {~"record ~tw already defined", [T]};
+format_error_1({redefine_struct,S}) ->
+    {~"struct ~tw already defined", [S]};
 format_error_1({redefine_field,T,F}) ->
     {~"field ~tw already defined in record ~tw", [F,T]};
 format_error_1({redefine_struct_field,F}) ->
@@ -1034,6 +1038,8 @@ attribute_state({attribute,A,import_struct,Ss}, St) ->
     import_struct(A, Ss, St);
 attribute_state({attribute,A,record,{Name,Fields}}, St) ->
     record_def(A, Name, Fields, St);
+attribute_state({attribute,A,struct,{Name,Fields}}, St) ->
+    struct_def(A, Name, Fields, St);
 attribute_state({attribute,Aa,behaviour,Behaviour}, St) ->
     St#lint{behaviour=St#lint.behaviour ++ [{Aa,Behaviour}]};
 attribute_state({attribute,Aa,behavior,Behaviour}, St) ->
@@ -3041,6 +3047,16 @@ record_def(Anno, Name, Fs0, St0) ->
             St3 = St2#lint{type_id = {record, Name}},
             check_type({type, nowarn(), product, Types}, St3)
     end.
+
+struct_def(Anno, Name, _Fs0, St0) ->
+  case is_map_key(Name, St0#lint.structs) of
+    true -> add_error(Anno, {redefine_struct,Name}, St0);
+    false ->
+      St1 = St0,
+      St2=St1#lint{structs=maps:put(Name, {Anno,[]}, St1#lint.structs)},
+      St2
+  end.
+
 
 %% def_fields([RecDef], RecordName, State) -> {[DefField],State}.
 %%  Check (normalised) fields for duplicates.  Return unduplicated

@@ -86,7 +86,8 @@
          tilde_k/1,
          match_float_zero/1,
          undefined_module/1,
-         update_literal/1]).
+         update_literal/1,
+         structs/1]).
 
 suite() ->
     [{ct_hooks,[ts_install_cth]},
@@ -121,7 +122,7 @@ all() ->
      documentation_attributes,
      match_float_zero,
      undefined_module,
-     update_literal].
+     update_literal, structs].
 
 groups() -> 
     [{unused_vars_warn, [],
@@ -5393,6 +5394,45 @@ update_literal(Config) ->
          ],
     [] = run(Config, Ts),
 
+    ok.
+
+structs(Config) ->
+    Ts = [{undefined_struct,
+           <<"foo() -> &a{}.
+             bar(&b{}) -> b.">>,
+           [],
+           {errors,[{{1,30},erl_lint,{undefined_struct,a}},
+                   {{2,18},erl_lint,{undefined_struct,b}}],[]}},
+          {redefine_struct,
+           <<"-struct(a, {}).
+             -struct(a, {}).">>,
+           [],
+           {errors,[{{2,15},erl_lint,{redefine_struct,a}}],[]}},
+          {redefine_struct_1,
+           <<"-struct(a, {}).
+              -import_struct(a, [a]).">>,
+           [],
+           {errors,[{{2,16},erl_lint,{redefine_struct_import,a}}],[]}},
+          {redefine_struct_2,
+           <<"-import_struct(a, [a]).
+              -struct(a, {}).">>,
+           [],
+           {errors,[{{1,22},erl_lint,{redefine_struct_import,a}}],[]}},
+          {redefine_struct_3,
+           <<"-import_struct(a, [a]).
+              -import_struct(b, [a]).">>,
+          [],
+          {errors,[{{2,16},erl_lint,{redefine_struct_import,{a,a}}}],[]}},
+          % expressions
+          {redefine_struct_field_3,
+           <<"-import_struct(a, [a]).
+              mk_a() -> &a{a = 1, a = b}.
+              get_a(&a{b = b, b = c}) -> ok.">>,
+          [],
+          {errors,[{{2,35},erl_lint,{redefine_struct_field,a}},
+                   {{3,31},erl_lint,{redefine_struct_field,b}}],[]}}
+         ],
+    [] = run(Config, Ts),
     ok.
 
 %%%
