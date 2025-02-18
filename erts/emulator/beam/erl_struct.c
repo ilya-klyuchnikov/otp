@@ -325,7 +325,7 @@ void erts_struct_end_staging(int commit)
     IF_DEBUG(debug_struct_load_ix = ~0);
 }
 
-BIF_RETTYPE struct_prototype_define_3(BIF_ALIST_3) {
+BIF_RETTYPE struct_define_3(BIF_ALIST_3) {
     /* Module, Name, {{Key, Default}, ...} */
     Eterm module, name, definition;
     Eterm *pairs;
@@ -367,7 +367,7 @@ BIF_RETTYPE struct_prototype_define_3(BIF_ALIST_3) {
     }
 
     if (!erts_try_seize_code_load_permission(BIF_P)) {
-        ERTS_BIF_YIELD3(BIF_TRAP_EXPORT(BIF_struct_prototype_define_3),
+        ERTS_BIF_YIELD3(BIF_TRAP_EXPORT(BIF_struct_define_3),
                         BIF_P, BIF_ARG_1, BIF_ARG_2, BIF_ARG_3);
     }
 
@@ -404,7 +404,7 @@ BIF_RETTYPE struct_prototype_define_3(BIF_ALIST_3) {
     BIF_RET(am_true);
 }
 
-BIF_RETTYPE struct_prototype_create_2(BIF_ALIST_2) {
+BIF_RETTYPE struct_create_2(BIF_ALIST_2) {
     /* Module, Name */
     Eterm module, name;
     ErtsStructEntry *entry;
@@ -449,7 +449,7 @@ BIF_RETTYPE struct_prototype_create_2(BIF_ALIST_2) {
     BIF_ERROR(BIF_P, BADARG);
 }
 
-BIF_RETTYPE struct_prototype_update_3(BIF_ALIST_3) {
+BIF_RETTYPE struct_update_3(BIF_ALIST_3) {
     /* Struct term, Key, Value */
     ErtsStructDefinition *defp;
     ErtsStructEntry *entry;

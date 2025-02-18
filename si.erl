@@ -36,15 +36,15 @@ tests() ->
   ok.
 
 init_definitions() ->
-  struct_prototype:define(a,a,
+  struct:define(a,a,
     {{a1,a1_default},
       {a2,a2_default}}
   ),
-  struct_prototype:define(a,b,
+  struct:define(a,b,
     {{b1,b1_default},
       {b2,b2_default}}
   ),
-  struct_prototype:define(a,c,
+  struct:define(a,c,
     {{a1,a1_default},
       {a2,a2_default}}
   ).

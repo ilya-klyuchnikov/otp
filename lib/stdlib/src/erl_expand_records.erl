@@ -379,7 +379,7 @@ expr({struct,Anno,{M,N},Inits},St0) ->
     Struct0 =
         {call,
             Anno,
-            {remote,Anno,{atom,Anno,struct_prototype},{atom,Anno,create}},
+            {remote,Anno,{atom,Anno,struct},{atom,Anno,create}},
             [{atom, Anno, M},{atom, Anno, N}]},
     {Struct1,St1} = expr(Struct0, St0),
     {Ue,St2} = struct_init_update(Struct1, Anno, Inits, St1),
@@ -391,7 +391,7 @@ expr({struct,Anno,N,Inits},St0) when is_atom(N) ->
     Struct0 =
         {call,
             Anno,
-            {remote,Anno,{atom,Anno,struct_prototype},{atom,Anno,create}},
+            {remote,Anno,{atom,Anno,struct},{atom,Anno,create}},
             [{atom, Anno, M},{atom, Anno, N}]},
     {Struct1,St1} = expr(Struct0, St0),
     {Ue,St2} = struct_init_update(Struct1, Anno, Inits, St1),
@@ -1004,7 +1004,7 @@ struct_init_update(Str, Anno, Us0, St0) ->
     {Var,St2} = new_var(Anno, St1),
     Update =
         foldr(fun ({struct_field,A,N,Val}, Acc) ->
-            {call,A,{remote,A,{atom,A,struct_prototype}, {atom,A,update}},[Acc,{atom,A,N},Val]} end,
+            {call,A,{remote,A,{atom,A,struct}, {atom,A,update}},[Acc,{atom,A,N},Val]} end,
             Var,
             Us),
     {{block,Anno,Pre ++ [{match,Anno,Var,Str},Update]},St2}.
@@ -1013,7 +1013,7 @@ struct_update_update(Var, A, Us0, St0) ->
     {Pre,Us,St1} = struct_exprs(Us0, St0),
     Update =
         foldr(fun ({struct_field,_,N,Val}, Acc) ->
-            {call,A,{remote,A,{atom,A,struct_prototype}, {atom,A,update}},[Acc,{atom,A,N},Val]} end,
+            {call,A,{remote,A,{atom,A,struct}, {atom,A,update}},[Acc,{atom,A,N},Val]} end,
             Var,
             Us),
     {Pre ++ [Update],St1}.

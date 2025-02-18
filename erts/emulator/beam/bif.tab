@@ -810,9 +810,9 @@ bif erts_trace_cleaner:send_trace_clean_signal/1
 # STRUCT PROTOTYPE
 #
 
-bif struct_prototype:define/3
-bif struct_prototype:create/2
-bif struct_prototype:update/3
+bif struct:define/3
+bif struct:create/2
+bif struct:update/3
 
 ubif erlang:is_struct/1
 ubif erlang:is_tagged_struct/3
