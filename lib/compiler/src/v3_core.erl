@@ -3168,8 +3168,9 @@ ren_pat(#c_alias{var=Var0,pat=Pat0}=Alias, Ks, {_,_}=Subs0, St0) ->
 ren_pat(#imap{es=Es0}=Map, Ks, {_,_}=Subs0, St0) ->
     {Es,Subs,St} = ren_pat_map(Es0, Ks, Subs0, St0),
     {Map#imap{es=Es},Subs,St};
-ren_pat(#c_struct{}, _Ks, {_,_}=_Subs0, _St0) ->
-    error("ren_pat");
+ren_pat(#c_struct{es=Es0}=Struct, Ks, {_,_}=Subs0, St0) ->
+    {Es,Subs,St} = ren_pat_struct(Es0, Ks, Subs0, St0),
+    {Struct#c_struct{es=Es},Subs,St};
 ren_pat(#ibinary{segments=Es0}=P, Ks, {Isub,Osub0}, St0) ->
     {Es,_Isub,Osub,St} = ren_pat_bin(Es0, Ks, Isub, Osub0, St0),
     {P#ibinary{segments=Es},{Isub,Osub},St};
@@ -3199,6 +3200,13 @@ ren_pat_map([#imappair{val=Val0}=MapPair|Es0], Ks, Subs0, St0) ->
     {[MapPair#imappair{val=Val}|Es],Subs,St};
 ren_pat_map([], _Ks, Subs, St) ->
     {[],Subs,St}.
+
+ren_pat_struct([#c_struct_pair{val=Val0}=StrPair|Es0], Ks, Subs0, St0) ->
+  {Val,Subs1,St1} = ren_pat(Val0, Ks, Subs0, St0),
+  {Es,Subs,St} = ren_pat_struct(Es0, Ks, Subs1, St1),
+  {[StrPair#c_struct_pair{val=Val}|Es],Subs,St};
+ren_pat_struct([], _Ks, Subs, St) ->
+  {[],Subs,St}.
 
 ren_get_subst([#c_var{name=V}]=Old, Sub) ->
     case ren_is_subst(V, Sub) of
