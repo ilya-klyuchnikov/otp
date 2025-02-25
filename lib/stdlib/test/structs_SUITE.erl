@@ -25,13 +25,16 @@
 
 -include_lib("stdlib/include/assert.hrl").
 
+-struct(local, {a}).
+
 -export([all/0, suite/0, groups/0]).
 
 -export([init_per_group/2, end_per_group/2]).
 
 %% tests
 -export([t_1/1, t_2/1, t_3/1, t_4/1, t_6/1, t_7/1, t_8/1, t_9/1, t_10/1,
-         t_11/1, t_12/1, t_13/1, t_14/1, t_15/1, t_16/1, t_17/1, t_18/1, t_19/1, t_20/1]).
+         t_11/1, t_12/1, t_13/1, t_14/1, t_15/1, t_16/1, t_17/1, t_18/1, t_19/1, t_20/1,
+         t_21/1]).
 -export([id/1]).
 
 suite() ->
@@ -43,7 +46,7 @@ all() ->
 
 groups() ->
   [{simple, [t_1, t_2, t_3, t_4, t_6, t_7, t_8, t_9, t_10,
-             t_11, t_12, t_13, t_14, t_15, t_16, t_17, t_18, t_19, t_20]}].
+             t_11, t_12, t_13, t_14, t_15, t_16, t_17, t_18, t_19, t_20, t_21]}].
 
 init_definitions() ->
   struct:define(a,a,
@@ -57,7 +60,9 @@ init_definitions() ->
   struct:define(a,c,
     {{a1,a1_default},
       {a2,a2_default}}
-  ).
+  ),
+  struct:define(structs_SUITE, local,
+    {{a, a_default}}).
 
 %%%%%%%%%%%%%
 
@@ -255,6 +260,12 @@ t_20(_Config) ->
   A = &a:a{},
   A1 = A&{a1 = a1, a2 = a2},
   &{a1 = a1} = A1.
+
+%% local structs
+t_21(_Config) ->
+  Local = &local{},
+  &local{a = A} = Local,
+  a_default = A.
 
 
 init_per_group(_, Config) ->

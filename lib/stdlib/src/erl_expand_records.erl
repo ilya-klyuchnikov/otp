@@ -43,7 +43,8 @@ Section [The Abstract Format](`e:erts:absform.md`) in ERTS User's Guide.
                  dialyzer=false,       % Compiler option 'dialyzer'
                  strict_rec_tests=true :: boolean(),
                  strict_sa=[],         % strict struct access
-                 checked_sa=[]         % Successfully accessed structs
+                 checked_sa=[],        % Successfully accessed structs
+                 module=''             % Module
                 }).
 
 -doc """
@@ -87,7 +88,7 @@ init_calltype_imports([_|T], Ctype) ->
 init_calltype_imports([], Ctype) -> Ctype.
 
 init_structtype(Forms) ->
-    Stype = #{},
+    Stype = #{ Name => local || {attribute, _, struct, {Name,_}} <- Forms },
     init_structtype_imports(Forms, Stype).
 
 init_structtype_imports([{attribute,_,import_struct,{Mod,Ss}}|T], Stype0) ->
@@ -108,6 +109,10 @@ forms([{function,Anno,N,A,Cs0} | Fs0], St0) ->
     {Cs,St1} = clauses(Cs0, St0),
     {Fs,St2} = forms(Fs0, St1),
     {[{function,Anno,N,A,Cs} | Fs],St2};
+forms([{attribute,_Anno,module,M}=Attr | Fs], St0) ->
+    St = St0#exprec{module = M},
+    {Fs1, St1} = forms(Fs, St),
+    {[Attr | Fs1], St1};
 forms([F | Fs0], St0) ->
     {Fs,St} = forms(Fs0, St0),
     {[F | Fs], St};
@@ -159,7 +164,8 @@ pattern({struct,Anno,{M,N},Ps}, St0) ->
     {{struct,Anno,{M,N},TPs},St1};
 pattern({struct,Anno,N,Ps}, St0) when is_atom(N) ->
     M = case St0#exprec.structype of
-            #{N := {imported, M0}} -> M0
+            #{N := {imported, M0}} -> M0;
+            #{N := local} -> St0#exprec.module
         end,
     {TPs,St1} = pattern_list(Ps, St0),
     {{struct,Anno,{M,N},TPs},St1};
@@ -386,7 +392,8 @@ expr({struct,Anno,{M,N},Inits},St0) ->
     expr(Ue, St2);
 expr({struct,Anno,N,Inits},St0) when is_atom(N) ->
     M = case St0#exprec.structype of
-            #{N := {imported, M0}} -> M0
+            #{N := {imported, M0}} -> M0;
+            #{N := local} -> St0#exprec.module
         end,
     Struct0 =
         {call,
@@ -404,7 +411,8 @@ expr({struct_update,_A,Str,{},Updates}, St0) ->
     update_struct_fields(Anno, Str, {}, Updates, St0);
 expr({struct_update,_A,Str,N,Updates}, St0) when is_atom(N) ->
     M = case St0#exprec.structype of
-            #{N := {imported, M0}} -> M0
+            #{N := {imported, M0}} -> M0;
+            #{N := local} -> St0#exprec.module
         end,
     Anno = erl_parse:first_anno(Str),
     update_struct_fields(Anno, Str, {M, N}, Updates, St0);
@@ -419,7 +427,8 @@ expr({struct_field_expr,_A,Str,{}, F}, St) ->
     get_struct_field(Anno, Str, F, {}, St);
 expr({struct_field_expr,_A,Str,N, F}, St) when is_atom(N) ->
     M = case St#exprec.structype of
-            #{N := {imported, M0}} -> M0
+            #{N := {imported, M0}} -> M0;
+            #{N := local} -> St#exprec.module
         end,
     Anno = erl_parse:first_anno(Str),
     get_struct_field(Anno, Str, F, {M, N}, St);

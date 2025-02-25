@@ -3126,9 +3126,13 @@ check_record(Anno, Name, St, CheckFun) ->
     end.
 
 call_struct(Anno, Name, St) ->
-  case orddict:find(Name, St#lint.struct_imports) of
+  case maps:find(Name, St#lint.structs) of
     {ok, _} -> St;
-    error -> add_error(Anno, {undefined_struct,Name}, St)
+    error ->
+      case orddict:find(Name, St#lint.struct_imports) of
+        {ok, _} -> St;
+        error -> add_error(Anno, {undefined_struct,Name}, St)
+      end
   end.
 
 used_record(Name, #lint{usage=Usage}=St) ->
@@ -3202,41 +3206,6 @@ pattern_fields(Fs, Name, Fields, Vt0, Old, St0) ->
               end, {[],[],[],St0}, Fs),
     {Uvt,Unew,St1}.
 
-pattern_struct_fields(Fs, Vt0, Old, St0) ->
-  CheckFun = fun (Val, Vt, St) -> pattern(Val, Vt, Old, St) end,
-  {_SeenFields,Uvt,Unew,St1} =
-    foldl(fun (Field, {Sfsa,Vta,Newa,Sta}) ->
-      case check_struct_field(Field, Vt0, Sta, Sfsa, CheckFun) of
-        {Sfsb,{Vtb,Stb}} ->
-          {Vt, St1} = vtmerge_pat(Vta, Vtb, Stb),
-          {Sfsb, Vt, [], St1};
-        {Sfsb,{Vtb,Newb,Stb}} ->
-          {Vt, Mst0} = vtmerge_pat(Vta, Vtb, Stb),
-          {New, Mst} = vtmerge_pat(Newa, Newb, Mst0),
-          {Sfsb, Vt, New, Mst}
-      end
-          end, {[],[],[],St0}, Fs),
-  {Uvt,Unew,St1}.
-
-check_struct_fields(Fs, Vt0, St0) ->
-  CheckFun = fun expr/3,
-  {_SeenFields,Uvt,St1} =
-    foldl(
-      fun (Field, {Sfsa,Vta,Sta}) ->
-        {Sfsb,{Vtb,Stb}} = check_struct_field(Field, Vt0, Sta, Sfsa, CheckFun),
-        {Vt1, St1} = vtmerge_pat(Vta, Vtb, Stb),
-        {Sfsb, Vt1, St1}
-      end,
-      {[],[], St0},
-      Fs),
-  {Uvt,St1}.
-
-check_struct_field({struct_field, Af, F, Val}, Vt, St, Sfs, CheckFun) ->
-  case member(F, Sfs) of
-    true -> {Sfs, {[], add_error(Af, {redefine_struct_field, F}, St)}};
-    false -> {[F|Sfs],CheckFun(Val, Vt, St)}
-  end.
-
 %% record_field(Field, RecordName, [RecDefField], State) ->
 %%      {UpdVarTable,State}.
 %%  Test if record RecordName has field Field. Set State.
@@ -3299,6 +3268,42 @@ exist_field(_F, []) -> false.
 find_field(F, [{record_field,_Af,{atom,_Aa,F},Val}|_Fs]) -> {ok,Val};
 find_field(F, [_|Fs]) -> find_field(F, Fs);
 find_field(_F, []) -> error.
+
+pattern_struct_fields(Fs, Vt0, Old, St0) ->
+  CheckFun = fun (Val, Vt, St) -> pattern(Val, Vt, Old, St) end,
+  {_SeenFields,Uvt,Unew,St1} =
+    foldl(fun (Field, {Sfsa,Vta,Newa,Sta}) ->
+      case check_struct_field(Field, Vt0, Sta, Sfsa, CheckFun) of
+        {Sfsb,{Vtb,Stb}} ->
+          {Vt, St1} = vtmerge_pat(Vta, Vtb, Stb),
+          {Sfsb, Vt, [], St1};
+        {Sfsb,{Vtb,Newb,Stb}} ->
+          {Vt, Mst0} = vtmerge_pat(Vta, Vtb, Stb),
+          {New, Mst} = vtmerge_pat(Newa, Newb, Mst0),
+          {Sfsb, Vt, New, Mst}
+      end
+          end, {[],[],[],St0}, Fs),
+  {Uvt,Unew,St1}.
+
+check_struct_fields(Fs, Vt0, St0) ->
+  CheckFun = fun expr/3,
+  {_SeenFields,Uvt,St1} =
+    foldl(
+      fun (Field, {Sfsa,Vta,Sta}) ->
+        {Sfsb,{Vtb,Stb}} = check_struct_field(Field, Vt0, Sta, Sfsa, CheckFun),
+        {Vt1, St1} = vtmerge_pat(Vta, Vtb, Stb),
+        {Sfsb, Vt1, St1}
+      end,
+      {[],[], St0},
+      Fs),
+  {Uvt,St1}.
+
+check_struct_field({struct_field, Af, F, Val}, Vt, St, Sfs, CheckFun) ->
+  case member(F, Sfs) of
+    true -> {Sfs, {[], add_error(Af, {redefine_struct_field, F}, St)}};
+    false -> {[F|Sfs],CheckFun(Val, Vt, St)}
+  end.
+
 
 %% type_def(Attr, Anno, TypeName, PatField, Args, State) -> State.
 %%    Attr :: 'type' | 'opaque'

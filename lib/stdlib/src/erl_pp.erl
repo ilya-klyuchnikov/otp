@@ -959,7 +959,7 @@ struct_def_field({typed_struct_def_field,{struct_def_field,_,F,Val},Type}, Opts)
   {list,[{cstep,[Fl,' ='],Vl}]};
 struct_def_field({typed_struct_def_field,Field,Type}, Opts) ->
   typed(struct_def_field(Field, Opts), Type);
-struct_def_field({record_field,_,F}, Opts) ->
+struct_def_field({struct_def_field,_,F}, Opts) ->
   lexpr(F, 0, Opts).
 
 
