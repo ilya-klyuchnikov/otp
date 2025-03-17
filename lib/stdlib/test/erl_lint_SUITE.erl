@@ -5431,7 +5431,7 @@ structs(Config) ->
           [],
           {errors,[{{2,35},erl_lint,{redefine_struct_field,a}},
                    {{3,31},erl_lint,{redefine_struct_field,b}}],[]}},
-          {undefined_struct_def_field,
+          {redefine_struct_field_def,
            <<"-struct(s1, {a, a}).
               -struct(s2, {a=atom, a}).
               -struct(s3, {a, a=atom}).
@@ -5439,7 +5439,28 @@ structs(Config) ->
            [],
            {errors,[{{1,37},erl_lint,{redefine_struct_field_def,s1,a}},
                     {{2,36},erl_lint,{redefine_struct_field_def,s2,a}},
-                    {{3,31},erl_lint,{redefine_struct_field_def,s3,a}}], []}}
+                    {{3,31},erl_lint,{redefine_struct_field_def,s3,a}}], []}},
+           {undefined_struct_field,
+            <<"-struct(s, {a=a, c=c}).
+               mk() -> &s{a = a, b = b}.
+               pat(&s{a = A, b = B}) -> {A, B}.
+               update(S) -> S&s{b = b}.
+               get1(S) -> S&s.b.
+               get2(S, B) when B == S&s.b -> ok.">>,
+            [],
+            {warnings,[{{2,34},erl_lint,{undefined_struct_field,b,s}},
+                       {{3,30},erl_lint,{undefined_struct_field,b,s}},
+                       {{4,33},erl_lint,{undefined_struct_field,b,s}},
+                       {{5,28},erl_lint,{undefined_struct_field,b,s}},
+                       {{6,38},erl_lint,{undefined_struct_field,b,s}}]}},
+            {redefine_struct_field_3,
+             <<"-struct(s, {a, b, c = c}).
+                mk1() -> &s{}.
+                mk2() -> &s{a = a}.">>,
+            [],
+             {warnings,[{{2,26},erl_lint,{not_inited_struct_field,a,s}},
+                        {{2,26},erl_lint,{not_inited_struct_field,b,s}},
+                        {{3,26},erl_lint,{not_inited_struct_field,b,s}}]}}
          ],
     [] = run(Config, Ts),
     ok.

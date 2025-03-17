@@ -432,6 +432,10 @@ format_error_1({redefine_struct_field,F}) ->
     {~"field ~tw already defined in struct", [F]};
 format_error_1({redefine_struct_field_def,F,N}) ->
     {~"field ~tw already defined in struct ~tw", [F,N]};
+format_error_1({undefined_struct_field,F,N}) ->
+    {~"field ~tw not defined in struct ~tw", [F,N]};
+format_error_1({not_inited_struct_field,Fs,N}) ->
+    {~"field ~tw is not initialized in struct ~tw", [Fs,N]};
 format_error_1(bad_multi_field_init) ->
     {~"'_' initializes no omitted fields", []};
 format_error_1({undefined_field,T,F}) ->
@@ -2026,7 +2030,8 @@ pattern({struct, _Anno, {_Mod, _Name}, Fs}, Vt, Old, St) ->
   pattern_struct_fields(Fs, Vt, Old, St);
 pattern({struct, Anno, Name, Fs}, Vt, Old, St) when is_atom(Name) ->
   St1 = call_struct(Anno, Name, St),
-  pattern_struct_fields(Fs, Vt, Old, St1);
+  St2 = check_struct_fields_usage(Name, Fs, St1),
+  pattern_struct_fields(Fs, Vt, Old, St2);
 pattern({struct, _Anno, {}, Fs}, Vt, Old, St) ->
   pattern_struct_fields(Fs, Vt, Old, St);
 pattern({bin,_,Fs}, Vt, Old, St) ->
@@ -2390,10 +2395,11 @@ gexpr({struct_field_expr, _Anno, Str, {_MName,_Name}, FieldName}, Vt, St0) when 
 gexpr({struct_field_expr, _Anno, Str, {}, FieldName}, Vt, St0) when is_atom(FieldName) ->
   {Rvt,St1} = gexpr(Str, Vt, St0),
   {Rvt,St1};
-gexpr({struct_field_expr, Anno, Str, Name, FieldName}, Vt, St0) when is_atom(Name), is_atom(FieldName) ->
+gexpr({struct_field_expr, Anno, Str, Name, FieldName}=E, Vt, St0) when is_atom(Name), is_atom(FieldName) ->
   St1 = call_struct(Anno, Name, St0),
   {Rvt,St2} = gexpr(Str, Vt, St1),
-  {Rvt,St2};
+  St3 = check_struct_field_expr_usage(E, St2),
+  {Rvt,St3};
 gexpr({bin,_Anno,Fs}, Vt,St) ->
     expr_bin(Fs, Vt, St, fun gexpr/3);
 gexpr({call,_Anno,{atom,_Ar,is_record},[E,{atom,An,Name}]}, Vt, St0) ->
@@ -2702,7 +2708,9 @@ expr({struct, _Anno, {MName, Name}, Inits}, Vt, St) when is_atom(MName),is_atom(
 expr({struct, Anno, Name, Inits}, Vt, St) when is_atom(Name) ->
   {Usvt, St1} = check_struct_fields(Inits, Vt, St),
   St2 = call_struct(Anno, Name, St1),
-  {Usvt, St2};
+  St3 = check_struct_fields_usage(Name, Inits, St2),
+  St4 = check_struct_fields_init(Name, Inits, St3, Anno),
+  {Usvt, St4};
 expr({struct_update, _Anno, Expr, {MName, Name}, Updates}, Vt, St) when is_atom(MName),is_atom(Name) ->
   {Rvt, St1} = expr(Expr, Vt, St),
   {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
@@ -2713,7 +2721,8 @@ expr({struct_update, Anno, Expr, Name, Updates}, Vt, St) when is_atom(Name) ->
   {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
   Usvt1 = vtmerge(Rvt, Usvt),
   St3 = call_struct(Anno, Name, St2),
-  {Usvt1, St3};
+  St4 = check_struct_fields_usage(Name, Updates, St3),
+  {Usvt1, St4};
 expr({struct_update, _Anno, Expr, {}, Updates}, Vt, St) ->
   {Rvt, St1} = expr(Expr, Vt, St),
   {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
@@ -2723,10 +2732,11 @@ expr({struct_field_expr, _Anno, Str, {_MName,_Name}, FieldName}, Vt, St) when is
   expr(Str, Vt, St);
 expr({struct_field_expr, _Anno, Str, {}, FieldName}, Vt, St) when is_atom(FieldName) ->
   expr(Str, Vt, St);
-expr({struct_field_expr, Anno, Str, Name, FieldName}, Vt, St) when is_atom(Name),is_atom(FieldName) ->
+expr({struct_field_expr, Anno, Str, Name, FieldName}=E, Vt, St) when is_atom(Name),is_atom(FieldName) ->
   {Usvt, St1} = expr(Str, Vt, St),
   St2 = call_struct(Anno, Name, St1),
-  {Usvt, St2};
+  St3 = check_struct_field_expr_usage(E, St2),
+  {Usvt, St3};
 expr({record_field,Anno,Rec,Name,Field}, Vt, St0) ->
     {Rvt,St1} = record_expr(Anno, Rec, Vt, St0),
     {Fvt,St2} = check_record(Anno, Name, St1,
@@ -3283,6 +3293,13 @@ exist_struct_field(F, [{struct_def_field,_Af,{atom,_Aa,F}}|_Fs]) -> true;
 exist_struct_field(F, [_|Fs]) -> exist_struct_field(F, Fs);
 exist_struct_field(_F, []) -> false.
 
+not_inited_struct_fields([{struct_def_field,_Af,{atom,_Aa,F}}|Fs]) ->
+  [F | not_inited_struct_fields(Fs)];
+not_inited_struct_fields([_|Fs]) ->
+  not_inited_struct_fields(Fs);
+not_inited_struct_fields([]) ->
+  [].
+
 %% find_field(FieldName, [Field]) -> {ok,Val} | error.
 %%  Find a record field in a field list.
 
@@ -3306,6 +3323,9 @@ pattern_struct_fields(Fs, Vt0, Old, St0) ->
           end, {[],[],[],St0}, Fs),
   {Uvt,Unew,St1}.
 
+%% check that there are no duplicate fields
+%% in struct usages.
+%% We don't have a definition of the struct here.
 check_struct_fields(Fs, Vt0, St0) ->
   CheckFun = fun expr/3,
   {_SeenFields,Uvt,St1} =
@@ -3323,6 +3343,56 @@ check_struct_field({struct_field, Af, F, Val}, Vt, St, Sfs, CheckFun) ->
   case member(F, Sfs) of
     true -> {Sfs, {[], add_error(Af, {redefine_struct_field, F}, St)}};
     false -> {[F|Sfs],CheckFun(Val, Vt, St)}
+  end.
+
+%% check struct fields against
+%% the struct definition. Issues warnings.
+check_struct_fields_usage(SName, Fs, St0) ->
+  case maps:find(SName, St0#lint.structs) of
+    error ->
+      St0;
+    {ok, {_A, FieldDefs}} ->
+      foldl(
+          fun({struct_field, Af, FName, _Val}, St) ->
+            case exist_struct_field(FName, FieldDefs) of
+              true -> St;
+              false -> add_warning(Af, {undefined_struct_field, FName, SName}, St)
+            end
+          end,
+          St0,
+          Fs
+      )
+  end.
+
+check_struct_fields_init(SName, Inits, St0, Anno) ->
+  case maps:find(SName, St0#lint.structs) of
+    error ->
+      St0;
+    {ok, {_A, FieldDefs}} ->
+      NotInitedInDef = not_inited_struct_fields(FieldDefs),
+      Inited = foldl(
+        fun({struct_field, _Aa, FName, _Val}, Init) -> [FName | Init] end,
+        [],
+        Inits
+      ),
+      NotInited = NotInitedInDef -- Inited,
+      foldl(
+        fun(F, St) -> add_warning(Anno, {not_inited_struct_field, F, SName}, St) end,
+        St0,
+        NotInited
+      )
+  end.
+
+
+check_struct_field_expr_usage({struct_field_expr, Anno, _Str, SName, FName}, St) ->
+  case maps:find(SName, St#lint.structs) of
+    error ->
+      St;
+    {ok, {_A, FieldDefs}} ->
+      case exist_struct_field(FName, FieldDefs) of
+        true -> St;
+        false -> add_warning(Anno, {undefined_struct_field, FName, SName}, St)
+      end
   end.
 
 
