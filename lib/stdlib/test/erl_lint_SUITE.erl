@@ -5430,7 +5430,16 @@ structs(Config) ->
               get_a(&a{b = b, b = c}) -> ok.">>,
           [],
           {errors,[{{2,35},erl_lint,{redefine_struct_field,a}},
-                   {{3,31},erl_lint,{redefine_struct_field,b}}],[]}}
+                   {{3,31},erl_lint,{redefine_struct_field,b}}],[]}},
+          {undefined_struct_def_field,
+           <<"-struct(s1, {a, a}).
+              -struct(s2, {a=atom, a}).
+              -struct(s3, {a, a=atom}).
+              -struct(s4, {a=atom, b}).">>,
+           [],
+           {errors,[{{1,37},erl_lint,{redefine_struct_field_def,s1,a}},
+                    {{2,36},erl_lint,{redefine_struct_field_def,s2,a}},
+                    {{3,31},erl_lint,{redefine_struct_field_def,s3,a}}], []}}
          ],
     [] = run(Config, Ts),
     ok.

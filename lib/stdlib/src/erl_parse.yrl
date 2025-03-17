@@ -1674,6 +1674,7 @@ record_tuple({tuple,_At,Fields}) ->
 record_tuple(Other) ->
     ret_abstr_err(Other, "bad record declaration").
 
+% struct tuple in struct declaration
 struct_tuple({tuple,_At,Fields}) ->
     struct_fields(Fields);
 struct_tuple(Other) ->
@@ -1690,13 +1691,16 @@ record_fields([Other|_Fields]) ->
     ret_abstr_err(Other, "bad record field");
 record_fields([]) -> [].
 
-struct_fields([{atom,Aa,A}|Fields]) ->
-    [{struct_def_field,Aa,{atom,Aa,A}}|struct_fields(Fields)];
-struct_fields([{match,_Am,{atom,Aa,A},Expr}|Fields]) ->
-    [{struct_def_field,Aa,{atom,Aa,A},Expr}|struct_fields(Fields)];
-struct_fields([{typed,Expr,TypeInfo}|Fields]) ->
-    [Field] = struct_fields([Expr]),
-    [{typed_struct_def_field,Field,TypeInfo}|struct_fields(Fields)];
+% struct fields in struct declaration
+struct_fields([{atom,Aa,_}=N|Fields]) ->
+    [{struct_def_field,Aa,N}|struct_fields(Fields)];
+% TODO - not only atoms
+struct_fields([{match,_Am,{atom,Aa,_}=N,{atom,_,_}=V}|Fields]) ->
+    [{struct_def_field,Aa,N,V}|struct_fields(Fields)];
+% TODO - typed field
+%struct_fields([{typed,Expr,TypeInfo}|Fields]) ->
+%    [Field] = struct_fields([Expr]),
+%    [{typed_struct_def_field,Field,TypeInfo}|struct_fields(Fields)];
 struct_fields([Other|_Fields]) ->
     ret_abstr_err(Other, "bad struct field");
 struct_fields([]) -> [].

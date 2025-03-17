@@ -430,6 +430,8 @@ format_error_1({redefine_field,T,F}) ->
     {~"field ~tw already defined in record ~tw", [F,T]};
 format_error_1({redefine_struct_field,F}) ->
     {~"field ~tw already defined in struct", [F]};
+format_error_1({redefine_struct_field_def,F,N}) ->
+    {~"field ~tw already defined in struct ~tw", [F,N]};
 format_error_1(bad_multi_field_init) ->
     {~"'_' initializes no omitted fields", []};
 format_error_1({undefined_field,T,F}) ->
@@ -3048,12 +3050,12 @@ record_def(Anno, Name, Fs0, St0) ->
             check_type({type, nowarn(), product, Types}, St3)
     end.
 
-struct_def(Anno, Name, _Fs0, St0) ->
+struct_def(Anno, Name, Fs0, St0) ->
   case is_map_key(Name, St0#lint.structs) of
     true -> add_error(Anno, {redefine_struct,Name}, St0);
     false ->
-      St1 = St0,
-      St2=St1#lint{structs=maps:put(Name, {Anno,[]}, St1#lint.structs)},
+      {Fs, St1} = struct_def_fields(Fs0, Name, St0),
+      St2=St1#lint{structs=maps:put(Name, {Anno,Fs}, St1#lint.structs)},
       St2
   end.
 
@@ -3083,6 +3085,20 @@ def_fields(Fs0, Name, St0) ->
                                end,
                           {[{record_field,Af,{atom,Aa,F},NV}|Fs],St3}
                   end
+          end, {[],St0}, Fs0).
+
+struct_def_fields(Fs0, Name, St0) ->
+   foldl(fun
+           ({struct_def_field, Af, {atom, _Aa, F}}=Field, {Fs, St}) ->
+              case exist_struct_field(F, Fs) of
+                true -> {Fs, add_error(Af, {redefine_struct_field_def,Name,F}, St)};
+                false -> {[Field|Fs],St}
+              end;
+           ({struct_def_field, Af, {atom, _Aa, F}, _Init}=Field, {Fs, St}) ->
+             case exist_struct_field(F, Fs) of
+               true -> {Fs, add_error(Af, {redefine_struct_field_def,Name,F}, St)};
+               false -> {[Field|Fs],St}
+             end
           end, {[],St0}, Fs0).
 
 %% normalise_fields([RecDef]) -> [Field].
@@ -3261,6 +3277,11 @@ update_fields(Ufs, Name, Dfs, Vt, St) ->
 exist_field(F, [{record_field,_Af,{atom,_Aa,F},_Val}|_Fs]) -> true;
 exist_field(F, [_|Fs]) -> exist_field(F, Fs);
 exist_field(_F, []) -> false.
+
+exist_struct_field(F, [{struct_def_field,_Af,{atom,_Aa,F},_Val}|_Fs]) -> true;
+exist_struct_field(F, [{struct_def_field,_Af,{atom,_Aa,F}}|_Fs]) -> true;
+exist_struct_field(F, [_|Fs]) -> exist_struct_field(F, Fs);
+exist_struct_field(_F, []) -> false.
 
 %% find_field(FieldName, [Field]) -> {ok,Val} | error.
 %%  Find a record field in a field list.
