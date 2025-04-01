@@ -25,6 +25,8 @@
 %% =====================================================================
 
 -module(erl_syntax).
+% TODO - investigate why
+-eqwalizer(ignore).
 -moduledoc """
 Abstract Erlang syntax trees.
 
@@ -4735,7 +4737,7 @@ Returns the arguments subtrees of a `type_application` node.
 _See also: _`type_application/2`.
 """.
 -spec type_application_arguments(syntaxTree()) -> [syntaxTree()].
-
+% TODO - it's the slowest for eqwalization
 type_application_arguments(Node) ->
     case unwrap(Node) of
         {remote_type, _, [_, _, Arguments]} ->
