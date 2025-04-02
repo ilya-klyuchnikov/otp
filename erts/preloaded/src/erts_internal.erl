@@ -897,7 +897,7 @@ counters_add(_Ref, _Ix, _Incr) ->
 counters_put(_Ref, _Ix, _Value) ->
     erlang:nif_error(undef).
 
--spec counters_info(reference()) -> #{}.
+-spec counters_info(reference()) -> map().
 counters_info(_Ref) ->
     erlang:nif_error(undef).
 
