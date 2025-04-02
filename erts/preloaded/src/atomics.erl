@@ -52,7 +52,7 @@ access. The atomics are organized into arrays with the following semantics:
 -export_type([atomics_ref/0]).
 
 -doc "Identifies an atomic array returned from `new/2`.".
--opaque atomics_ref() :: reference().
+-type atomics_ref() :: reference().
 
 %% We must inline this function so that the stacktrace points to
 %% the correct function.

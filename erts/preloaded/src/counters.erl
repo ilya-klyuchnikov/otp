@@ -54,7 +54,7 @@ organized into arrays with the following semantics:
 -export_type([counters_ref/0]).
 
 -doc "Identifies a counter array returned from `new/2`.".
--opaque counters_ref() :: {atomics, reference()} | {write_concurrency, reference()}.
+-type counters_ref() :: {atomics, reference()} | {write_concurrency, reference()}.
 
 %% We must inline this function so that the stacktrace points to
 %% the correct function.
