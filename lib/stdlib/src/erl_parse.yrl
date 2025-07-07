@@ -440,7 +440,7 @@ record_field -> atom '=' expr : {record_field,?anno('$1'),'$1','$3'}.
 %% creating a struct
 %% {struct, Anno, {M, N}, Pairs}
 %% {struct, Anno, N, Pairs}
-struct_expr -> '&' atom ':' atom struct_tuple :
+struct_expr -> '#' atom ':' atom struct_tuple :
 	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$5'}.
 struct_expr -> '&' atom struct_tuple :
 	{struct,?anno('$1'),element(3, '$2'),'$3'}.
