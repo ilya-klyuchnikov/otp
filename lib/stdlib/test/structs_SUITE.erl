@@ -128,8 +128,8 @@ t_7(_Config) ->
 t_8(_Config) ->
   Str = #a:a{a1 = a10, a2 = a20},
   Str1 = Str&a:a{a1 = a11, a2 = a21},
-  a11 = Str1&a:a.a1,
-  a21 = Str1&a:a.a2,
+  a11 = Str1#a:a.a1,
+  a21 = Str1#a:a.a2,
   ok.
 
 %% maps/hashes
@@ -167,7 +167,7 @@ t_11(_Config) ->
   42 = match1(id(#{a1 => #a:a{a1 = #a:b{b2 = #{a1 => #a:a{a1 = 42}}}}}), ignore),
   ok.
 
-is_aa1(X) when X&a:a.a1 == 1 ->
+is_aa1(X) when X#a:a.a1 == 1 ->
   a1;
 is_aa1(_) ->
   no.
@@ -209,11 +209,11 @@ t_15(_Config) ->
   A = #a:a{a1 = a},
   B = #a:b{b1 = a},
   C = #a:c{},
-  F1 =  fun (X) when X&a:a.a1 == a; X&a:b.b1 == a -> true; (_) -> false end,
+  F1 =  fun (X) when X#a:a.a1 == a; X#a:b.b1 == a -> true; (_) -> false end,
   true = F1(A),
   true = F1(B),
   false = F1(C),
-  F2 =  fun (X) when X&a:a.a1 == a -> a; (X) when X&a:b.b1 == a -> b; (_) -> other end,
+  F2 =  fun (X) when X#a:a.a1 == a -> a; (X) when X#a:b.b1 == a -> b; (_) -> other end,
   a = F2(A),
   b = F2(B),
   other = F2(C).
@@ -223,13 +223,13 @@ t_16(_Config) ->
   B = #a:b{b1 = a},
   C = #a:c{},
   ABC = [A, B, C],
-  [A] = [X || X <- ABC, X&a:a.a1 == a].
+  [A] = [X || X <- ABC, X#a:a.a1 == a].
 
 t_17(_Config) ->
   A1 = #a:a{a1 = a},
   A2 = #a:a{a1 = b},
   AA = [A1, A2],
-  [A1] = [X || X <- AA, id(X&a:a.a1 == a)].
+  [A1] = [X || X <- AA, id(X#a:a.a1 == a)].
 
 t_18(_Config) ->
   A = #a:a{a1 = a},
@@ -237,7 +237,7 @@ t_18(_Config) ->
   AB = [A, B],
   fail = try
     % fails with badstruct
-    [A] = [X || X <- AB, id(X&a:a.a1 == a)]
+    [A] = [X || X <- AB, id(X#a:a.a1 == a)]
   catch _:_ -> fail end.
 
 get_any_a1(&{a1 = A}) -> {ok, A};

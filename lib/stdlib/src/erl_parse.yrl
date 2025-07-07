@@ -451,7 +451,7 @@ struct_expr -> '&' struct_tuple :
 %% accessing a struct field
 %% {struct_field_expr, Anno, E, {Ma, Na}, Fa}
 %% {struct_field_expr, Anno, E, Na, Fa}
-struct_expr -> expr_max '&' atom ':' atom '.' atom :
+struct_expr -> expr_max '#' atom ':' atom '.' atom :
 	{struct_field_expr,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},element(3, '$7')}.
 struct_expr -> expr_max '&' atom '.' atom :
 	{struct_field_expr,?anno('$2'),'$1',element(3, '$3'),element(3, '$5')}.
