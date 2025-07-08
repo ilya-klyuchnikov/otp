@@ -127,7 +127,7 @@ t_7(_Config) ->
 %% updates
 t_8(_Config) ->
   Str = #a:a{a1 = a10, a2 = a20},
-  Str1 = Str&a:a{a1 = a11, a2 = a21},
+  Str1 = Str#a:a{a1 = a11, a2 = a21},
   a11 = Str1#a:a.a1,
   a21 = Str1#a:a.a2,
   ok.
