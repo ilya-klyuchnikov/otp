@@ -461,7 +461,7 @@ struct_expr -> expr_max '&' '.' atom :
 %% updating a struct
 %% {struct, Anno, Expr, {M, N}, Pairs}
 %% {struct, Anno, Expr, N, Pairs}
-struct_expr -> expr_max '&' atom ':' atom struct_tuple :
+struct_expr -> expr_max '#' atom ':' atom struct_tuple :
 	{struct_update,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
 struct_expr -> expr_max '&' atom struct_tuple :
 	{struct_update,?anno('$2'),'$1',element(3, '$3'),'$4'}.
