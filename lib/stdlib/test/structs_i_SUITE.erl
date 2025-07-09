@@ -170,7 +170,7 @@ is_aa1(X) when X&a.a1 == 1 ->
 is_aa1(_) ->
   no.
 
-is_aa12(X) when X&.a1 == 1 ->
+is_aa12(X) when X#_.a1 == 1 ->
   a1;
 is_aa12(_) ->
   no.
@@ -242,10 +242,10 @@ get_any_a1(&{a1 = A}) -> {ok, A};
 get_any_a1(_) -> no.
 
 get_any_a2(S) ->
-  S&.a1.
+  S#_.a1.
 
 get_any_a3(S) ->
-  S&.a1.
+  S#_.a1.
 
 t_19(_Config) ->
   A = &a{a1 = a},
