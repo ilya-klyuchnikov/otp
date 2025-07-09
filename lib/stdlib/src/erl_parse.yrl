@@ -478,7 +478,7 @@ struct_pat_expr -> '#' atom ':' atom struct_tuple :
 	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$5'}.
 struct_pat_expr -> '&' atom struct_tuple :
 	{struct,?anno('$1'),element(3, '$2'),'$3'}.
-struct_pat_expr -> '&' struct_tuple :
+struct_pat_expr -> '#_' struct_tuple :
     % {} as a special marker
 	{struct,?anno('$1'), {},'$2'}.
 

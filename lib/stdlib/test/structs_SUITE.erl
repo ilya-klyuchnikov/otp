@@ -240,7 +240,7 @@ t_18(_Config) ->
     [A] = [X || X <- AB, id(X#a:a.a1 == a)]
   catch _:_ -> fail end.
 
-get_any_a1(&{a1 = A}) -> {ok, A};
+get_any_a1(#_{a1 = A}) -> {ok, A};
 get_any_a1(_) -> no.
 
 get_any_a2(S) ->
