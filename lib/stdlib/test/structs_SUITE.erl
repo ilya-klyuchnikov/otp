@@ -66,19 +66,19 @@ init_definitions() ->
 
 %%%%%%%%%%%%%
 
-name(&a:a{}) -> a;
-name(&a:b{}) -> b.
+name(#a:a{}) -> a;
+name(#a:b{}) -> b.
 
 t_1(_Config) ->
   ?assertEqual(a, name(#a:a{})),
   ?assertEqual(b, name(#a:b{})),
-  NameFun = fun (&a:a{}) -> a; (&a:b{}) -> b end,
+  NameFun = fun (#a:a{}) -> a; (#a:b{}) -> b end,
   ?assertEqual(a, NameFun(#a:a{})),
   ?assertEqual(b, NameFun(#a:b{})).
 
 %%%%%%%%%%%%%
 
-get_a1(&a:a{a1 = A1}) -> A1.
+get_a1(#a:a{a1 = A1}) -> A1.
 
 t_2(_Config) ->
   Str1 = #a:a{},
@@ -104,7 +104,7 @@ t_4(_Config) ->
   #a:a{a1 = A1} = Str,
   a1_default = A1.
 
-get_as(&a:a{a1 = A1, a2 = A2}) ->
+get_as(#a:a{a1 = A1, a2 = A2}) ->
   {A1, A2}.
 
 t_6(_Config) ->
@@ -119,8 +119,8 @@ t_6(_Config) ->
 
 %%
 t_7(_Config) ->
-  F1 = fun (&a:a{a3 = A3}) -> A3; (&a:a{a1 = A1}) -> A1 end,
-  F2 = fun (&a:a{a1 = #a:a{}}) -> a1; (&a:a{a1 = A1}) -> A1 end,
+  F1 = fun (#a:a{a3 = A3}) -> A3; (#a:a{a1 = A1}) -> A1 end,
+  F2 = fun (#a:a{a1 = #a:a{}}) -> a1; (#a:a{a1 = A1}) -> A1 end,
   a1_default = F1(#a:a{}),
   a1_default = F2(#a:a{}).
 
@@ -151,9 +151,9 @@ t_10(_Config) ->
   b1 = maps:get(#a:b{b1 = b1, b2 = b2}, M),
   ok.
 
-match1(&a:a{a1 = a1}, &a:b{b1 = b1}) ->
+match1(#a:a{a1 = a1}, #a:b{b1 = b1}) ->
   f1;
-match1(&a:a{a2 = a2}, &a:b{b2 = b2}) ->
+match1(#a:a{a2 = a2}, #a:b{b2 = b2}) ->
   f2;
 match1(#{a1 := #a:a{a1 = #a:b{b2 = #{a1 := #a:a{a1 = A1}}}}}, _) ->
   A1;
