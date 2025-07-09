@@ -474,7 +474,7 @@ struct_expr -> struct_expr '&' atom struct_tuple :
 struct_expr -> struct_expr '&' struct_tuple :
     	{struct_update,?anno('$2'),'$1',{},'$3'}.
 
-struct_pat_expr -> '&' atom ':' atom struct_tuple :
+struct_pat_expr -> '#' atom ':' atom struct_tuple :
 	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$5'}.
 struct_pat_expr -> '&' atom struct_tuple :
 	{struct,?anno('$1'),element(3, '$2'),'$3'}.
