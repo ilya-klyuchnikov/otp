@@ -929,7 +929,7 @@ processed (see section [Error Information](#module-error-information)).
 
 -type spec_attr() :: 'callback' | 'spec'.
 
--type af_wild_attribute() :: {'attribute', anno(), atom(), any()}.
+-type af_wild_attribute() :: {'attribute', anno(), atom(), dynamic()}.
 
 -type af_function_decl() ::
         {'function', anno(), function_name(), arity(), af_clause_seq()}.
