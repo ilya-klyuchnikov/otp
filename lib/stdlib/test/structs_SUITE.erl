@@ -259,7 +259,7 @@ t_19(_Config) ->
 t_20(_Config) ->
   A = #a:a{},
   A1 = A&{a1 = a1, a2 = a2},
-  &{a1 = a1} = A1.
+  #_{a1 = a1} = A1.
 
 %% local structs
 t_21(_Config) ->

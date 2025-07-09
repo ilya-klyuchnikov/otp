@@ -83,7 +83,7 @@ ssa_check_when_clauses.
 Terminals
 char integer float atom sigil_prefix string sigil_suffix var
 
-'(' ')' ',' '->' '{' '}' '[' ']' '|' '||' '<-' '<:-' ';' ':' '#' '&' '.' '&&'
+'(' ')' ',' '->' '{' '}' '[' ']' '|' '||' '<-' '<:-' ';' ':' '#_' '#' '&' '.' '&&'
 'after' 'begin' 'case' 'try' 'catch' 'end' 'fun' 'if' 'of' 'receive' 'when'
 'maybe' 'else'
 'andalso' 'orelse'
@@ -444,7 +444,7 @@ struct_expr -> '#' atom ':' atom struct_tuple :
 	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$5'}.
 struct_expr -> '&' atom struct_tuple :
 	{struct,?anno('$1'),element(3, '$2'),'$3'}.
-struct_expr -> '&' struct_tuple :
+struct_expr -> '#_' struct_tuple :
     % {} as a special marker
 	{struct,?anno('$1'), {},'$2'}.
 
