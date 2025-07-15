@@ -196,7 +196,7 @@ List of Erlang abstract or Core Erlang format representations, as used by
 -type forms() :: abstract_code() | cerl:c_module().
 
 -doc "See `file/2` for detailed description.".
--type option() :: atom() | {atom(), term()} | {'d', atom(), term()}.
+-type option() :: atom() | {atom(), dynamic()} | {'d', atom(), dynamic()}.
 
 -type error_description() :: erl_lint:error_description().
 -type error_info() :: erl_lint:error_info().

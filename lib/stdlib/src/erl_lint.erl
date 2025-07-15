@@ -23,6 +23,7 @@
 %% Do necessary checking of Erlang code.
 
 -module(erl_lint).
+-compile(warn_missing_spec_all).
 -moduledoc """
 The Erlang code linter.
 
@@ -106,12 +107,14 @@ bool_option(On, Off, Default, Opts) ->
           end, Default, Opts).
 
 -doc false.
+-spec value_option(atom(), Val, [compile:option()]) -> Val.
 value_option(Flag, Default, Opts) ->
     foldl(fun ({Opt,Val}, _Def) when Opt =:= Flag -> Val;
               (_Opt, Def) -> Def
           end, Default, Opts).
 
 -doc false.
+-spec value_option(atom(), Default :: Val, On :: atom(), OnVal :: Val, Off :: atom(), OffVal :: Val, [compile:option()]) -> Val.
 value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
     foldl(fun ({Opt,Val}, _Def) when Opt =:= Flag -> Val;
               (Opt, _Def) when Opt =:= On -> OnVal;
@@ -165,7 +168,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
           used_records = gb_sets:new()          %Used record definitions
               :: gb_sets:set(atom()),
           used_types = maps:new()               %Used type definitions
-              :: #{ta() := [used_type()]}
+              :: #{ta() => [used_type()]}
          }).
 
 
@@ -173,14 +176,14 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 %% 'called' and 'exports' contain {Anno, {Function, Arity}},
 %% the other function collections contain {Function, Arity}.
 -record(lint, {state=start		:: 'start' | 'attribute' | 'function',
-               module='',                       %Module
-               behaviour=[],                    %Behaviour
+               module='' :: module(),                       %Module
+               behaviour=[] :: [{erl_anno:anno(), erl_parse:behaviour()}],                    %Behaviour
                exports=gb_sets:empty()	:: gb_sets:set(fa()),%Exports
                imports=[] :: orddict:orddict(fa(), module()),%Imports
-               remote_self_calls=#{} :: #{ fa() => gb_sets:set() },
-               compile=[],                      %Compile flags
+               remote_self_calls=#{} :: #{ fa() => gb_sets:set(anno()) },
+               compile=[] :: [dynamic()],                      %Compile flags
                records=maps:new()               %Record definitions
-                   :: #{atom() => {anno(),Fields :: term()}},
+                   :: #{atom() => {anno(),Fields :: [erl_parse:af_field_decl()]}},
                locals=gb_sets:empty()     %All defined functions (prescanned)
                    :: gb_sets:set(fa()),
                no_auto={set, gb_sets:empty()} %Functions explicitly not autoimported
@@ -190,15 +193,15 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 	       on_load=[] :: [fa()],		%On-load function
 	       on_load_anno=erl_anno:new(0)	%Location for on_load
                    :: erl_anno:anno(),
-	       clashes=[],			%Exported functions named as BIFs
+	       clashes=[] :: ordsets:ordset(fa()),			%Exported functions named as BIFs
                not_deprecated=[],               %Not considered deprecated
                not_removed=gb_sets:empty()      %Not considered removed
                    :: gb_sets:set(module_or_mfa()),
-               func=[],                         %Current function
+               func=[] :: [] | fa(),                         %Current function
                type_id=[],                      %Current type id
-               warn_format=0,                   %Warn format calls
-	       enabled_warnings=[],		%All enabled warnings (ordset).
-               nowarn_bif_clash=[],             %All no warn bif clashes (ordset).
+               warn_format=0 :: integer(),                   %Warn format calls
+	       enabled_warnings=[] :: ordsets:ordset(atom()),		%All enabled warnings (ordset).
+               nowarn_bif_clash=[] :: [fa()],             %All no warn bif clashes (ordset).
                errors=[]   :: [{file:filename(),error_info()}], %Current errors
                warnings=[] :: [{file:filename(),error_info()}], %Current warnings
                file = ""        :: string(),	%From last file attribute
@@ -223,8 +226,8 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                    :: gb_sets:set(ta()),
                feature_keywords =               %Keywords in
                                                 %configurable features
-                   feature_keywords() :: #{atom() => atom()},
-               bvt = none :: 'none' | [any()],  %Variables in binary pattern
+                   feature_keywords() :: #{atom() => [atom()]},
+               bvt = none :: 'none' | var_table(),  %Variables in binary pattern
                gexpr_context = guard            %Context of guard expression
                    :: gexpr_context(),
                load_nif=false :: boolean(),      %true if calls erlang:load_nif/2
@@ -233,8 +236,18 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
               }).
 
 -type lint_state() :: #lint{}.
--type error_description() :: term().
+-type error_description() :: dynamic().
 -type error_info() :: {erl_anno:location()|'none', module(), error_description()}.
+
+-type var_table() :: orddict:orddict(
+    atom(),
+    var()
+).
+
+-type var() :: {var_state(), var_usage(), [anno()]}.
+
+-type var_state() :: bound | stacktrace | {unsafe, {atom(), erl_anno:location()}} | {export, dynamic()}.
+-type var_usage() :: used | unused.
 
 %% format_error(Error)
 %%  Return a string describing the error.
@@ -255,6 +268,7 @@ format_error(Error) ->
             unicode:characters_to_list(Bin)
     end.
 
+-spec format_error_1(error_description()) -> binary() | {binary(), [term()]}.
 format_error_1(undefined_module) ->
     ~"no module definition";
 format_error_1(redefine_module) ->
@@ -608,29 +622,36 @@ format_error_1({bad_dialyzer_option,Term}) ->
 format_error_1({format_error, {Fmt, Args}}) ->
     {Fmt, Args}.
 
+-spec gen_type_paren(arity()) -> string().
 gen_type_paren(Arity) when is_integer(Arity), Arity >= 0 ->
     gen_type_paren_1(Arity, ")").
 
+-spec gen_type_paren_1(integer(), string()) -> string().
 gen_type_paren_1(0, Acc) -> "(" ++ Acc;
 gen_type_paren_1(1, Acc) -> "(_" ++ Acc;
 gen_type_paren_1(N, Acc) -> gen_type_paren_1(N - 1, ",_" ++ Acc).
 
+-spec format_mfa(mfa() | {module(), atom(), [integer()]}) -> string().
 format_mfa({M, F, [_|_]=As}) ->
     ","++ArityString = lists:append([[$,|integer_to_list(A)] || A <- As]),
     format_mf(M, F, ArityString);
 format_mfa({M, F, A}) when is_integer(A) ->
     format_mf(M, F, integer_to_list(A)).
 
+-spec format_fa({atom(), [integer()]}) -> string().
 format_fa({F, [_|_]=As}) ->
     ","++ArityString = lists:append([[$,|integer_to_list(A)] || A <- As]),
     atom_to_list(F) ++ "/" ++ ArityString.
 
+-spec format_mf(module(), atom(), string()) -> string().
 format_mf(M, F, ArityString) when is_atom(M), is_atom(F) ->
     atom_to_list(M) ++ ":" ++ atom_to_list(F) ++ "/" ++ ArityString.
 
+-spec format_mna(mfa()) -> string().
 format_mna({M, N, A}) when is_integer(A) ->
     atom_to_list(M) ++ ":" ++ atom_to_list(N) ++ gen_type_paren(A).
 
+-spec format_where(integer() | {integer(), integer()}) -> string().
 format_where(L) when is_integer(L) ->
     io_lib:format("(line ~p)", [L]);
 format_where({L,C}) when is_integer(L), is_integer(C) ->
@@ -638,6 +659,7 @@ format_where({L,C}) when is_integer(L), is_integer(C) ->
 
 %% Local functions that are somehow automatically generated.
 
+-spec pseudolocals() -> [fa()].
 pseudolocals() ->
     [{module_info,0}, {module_info,1}, {record_info,2}].
 
@@ -645,10 +667,16 @@ pseudolocals() ->
 %% Used by erl_eval.erl to check commands.
 %%
 -doc false.
+-spec exprs([erl_parse:abstract_expr()], erl_eval:bindings()) ->
+    {ok, [{file:filename(), [error_info()]}]} % warnings.
+    | {error, [{file:filename(), [error_info()]}], [{file:filename(), [error_info()]}]}.
 exprs(Exprs, BindingsList) ->
     exprs_opt(Exprs, BindingsList, []).
 
 -doc false.
+-spec exprs_opt([erl_parse:abstract_expr()], erl_eval:bindings(), [atom()]) ->
+    {ok, [{file:filename(), [error_info()]}]} % warnings.
+    | {error, [{file:filename(), [error_info()]}], [{file:filename(), [error_info()]}]}.
 exprs_opt(Exprs, BindingsList, Opts) ->
     {St0,Vs} = foldl(fun({{record,_SequenceNumber,_Name},Attr0}, {St1,Vs1}) ->
                              Attr = set_file(Attr0, "none"),
@@ -661,6 +689,7 @@ exprs_opt(Exprs, BindingsList, Opts) ->
     return_status(St).
 
 -doc false.
+-spec used_vars([erl_parse:abstract_expr()], erl_eval:bindings()) -> fun_used_vars().
 used_vars(Exprs, BindingsList) ->
     Vs = foldl(fun({{record,_SequenceNumber,_Name},_Attr}, Vs0) -> Vs0;
 		  ({V,_Val}, Vs0) -> [{V,{bound,unused,[]}} | Vs0]
@@ -695,7 +724,7 @@ module(Forms) ->
 -spec(module(AbsForms, FileName) ->
              {ok, Warnings} | {error, Errors, Warnings} when
       AbsForms :: [erl_parse:abstract_form() | erl_parse:form_info()],
-      FileName :: atom() | string(),
+      FileName :: string(),
       Warnings :: [{SourceFile,[ErrorInfo]}],
       Errors :: [{SourceFile,[ErrorInfo]}],
       SourceFile :: file:filename(),
@@ -735,7 +764,7 @@ entries in the list of errors.
 -spec(module(AbsForms, FileName, CompileOptions) ->
              {ok, Warnings} | {error, Errors, Warnings} when
       AbsForms :: [erl_parse:abstract_form() | erl_parse:form_info()],
-      FileName :: atom() | string(),
+      FileName :: string(),
       CompileOptions :: [compile:option()],
       Warnings :: [{SourceFile,[ErrorInfo]}],
       Errors :: [{SourceFile,[ErrorInfo]}],
@@ -750,15 +779,18 @@ module(Forms, FileName, Opts0) ->
     St = forms(Forms, start(FileName, Opts)),
     return_status(St).
 
+-spec compiler_options([erl_parse:abstract_form() | erl_parse:form_info()]) -> [dynamic()].
 compiler_options(Forms) ->
     lists:flatten([C || {attribute,_,compile,C} <- Forms]).
 
 %% start() -> State
 %% start(FileName, [Option]) -> State
 
+-spec start() -> lint_state().
 start() ->
     start("nofile", []).
 
+-spec start(File :: string(), Opts :: [compile:option()]) -> lint_state().
 start(File, Opts) ->
     Enabled0 = [Category || {Category,true} <- bool_options()],
     Enabled1 = ordsets:from_list(Enabled0),
@@ -783,6 +815,7 @@ start(File, Opts) ->
           file = File
          }.
 
+-spec parse_options([compile:option()], ordsets:ordset(atom())) -> ordsets:ordset(atom()).
 parse_options([Opt0|Opts], Enabled0) when is_atom(Opt0) ->
     {Opt2,Enable} = case atom_to_binary(Opt0) of
                         <<"warn_",Opt1/binary>> ->
@@ -818,6 +851,7 @@ parse_options([_|Opts], Enabled) ->
 parse_options([], Enabled) ->
     Enabled.
 
+-spec bool_options() -> [{atom(), boolean()}].
 bool_options() ->
     [{unused_vars,true},
      {underscore_match,true},
@@ -853,8 +887,8 @@ bool_options() ->
      {ill_defined_optional_callbacks,true},
      {unexported_function,true}].
 
-%% is_warn_enabled(Category, St) -> boolean().
 %%  Check whether a warning of category Category is enabled.
+-spec is_warn_enabled(atom(), lint_state()) -> boolean().
 is_warn_enabled(Type, #lint{enabled_warnings=Enabled}) ->
     ordsets:is_element(Type, Enabled).
 
@@ -862,6 +896,9 @@ is_warn_enabled(Type, #lint{enabled_warnings=Enabled}) ->
 %%      {ok,[Warning]} | {error,[Error],[Warning]}
 %%  Pack errors and warnings properly and return ok | error.
 
+-spec return_status(lint_state()) ->
+    {ok, [{file:filename(), [error_info()]}]} % warnings.
+    | {error, [{file:filename(), [error_info()]}], [{file:filename(), [error_info()]}]}.
 return_status(St) ->
     Ws = pack_warnings(St#lint.warnings),
     case pack_errors(St#lint.errors) of
@@ -872,14 +909,13 @@ return_status(St) ->
 %% pack_errors([{File,ErrD}]) -> [{File,[ErrD]}].
 %%  Sort on (reversed) insertion order.
 
+-spec pack_errors([{file:filename(), error_info()}]) -> [{file:filename(), [error_info()]}].
 pack_errors(Es) ->
     {Es1,_} = mapfoldl(fun ({File,E}, I) -> {{File,{I,E}}, I-1} end, -1, Es),
     map(fun ({File,EIs}) -> {File, map(fun ({_I,E}) -> E end, EIs)} end,
         pack_warnings(Es1)).
 
-%% pack_warnings([{File,ErrD}]) -> [{File,[ErrD]}]
-%%  Sort on line number.
-
+-spec pack_warnings([{file:filename(),W}]) -> [{file:filename(), [W]}].
 pack_warnings(Ws) ->
     [{File,lists:sort([W || {F,W} <- Ws, F =:= File])} ||
         File <- lists:usort([F || {F,_} <- Ws])].
@@ -889,8 +925,10 @@ pack_warnings(Ws) ->
 %% add_warning(ErrorDescriptor, State) -> State'
 %% add_warning(Anno, Error, State) -> State'
 
+-spec add_error(error_info(), lint_state()) -> lint_state().
 add_error(E, St) -> add_lint_error(E, St#lint.file, St).
 
+-spec add_error(anno(), error_description(), lint_state()) -> lint_state().
 add_error(Anno, E0, #lint{gexpr_context=Context}=St) ->
     E = case {E0,Context} of
             {illegal_guard_expr,bin_seg_size} ->
@@ -902,18 +940,23 @@ add_error(Anno, E0, #lint{gexpr_context=Context}=St) ->
     {File,Location} = loc(Anno, St),
     add_lint_error({Location,erl_lint,E}, File, St).
 
+-spec add_lint_error(error_info(), file:filename(), lint_state()) -> lint_state().
 add_lint_error(E, File, St) ->
     St#lint{errors=[{File,E}|St#lint.errors]}.
 
+-spec add_warning(error_description(), lint_state()) -> lint_state().
 add_warning(W, St) -> add_lint_warning(W, St#lint.file, St).
 
+-spec add_warning(anno(), error_description(), lint_state()) -> lint_state().
 add_warning(Anno, W, St) ->
     {File,Location} = loc(Anno, St),
     add_lint_warning({Location,erl_lint,W}, File, St).
 
+-spec add_lint_warning(error_info(), file:filename(), lint_state()) -> lint_state().
 add_lint_warning(W, File, St) ->
     St#lint{warnings=[{File,W}|St#lint.warnings]}.
 
+-spec maybe_add_warning(anno(), tuple() | atom(), lint_state()) -> lint_state().
 maybe_add_warning(Anno, W, St) ->
     Tag = if
               is_tuple(W) -> element(1, W);
@@ -926,6 +969,7 @@ maybe_add_warning(Anno, W, St) ->
             St
     end.
 
+-spec loc(anno(), lint_state()) -> {file:filename(), erl_anno:location()}.
 loc(Anno, St) ->
     Location = erl_anno:location(Anno),
     case erl_anno:file(Anno) of
@@ -935,6 +979,10 @@ loc(Anno, St) ->
 
 %% forms([Form], State) -> State'
 
+-spec forms(
+    Forms0 :: [erl_parse:abstract_form() | erl_parse:form_info()],
+    St0 :: lint_state()
+) -> lint_state().
 forms(Forms0, St0) ->
     Forms = eval_file_attribute(Forms0, St0),
     %% Annotations from now on include the 'file' item.
@@ -949,6 +997,10 @@ forms(Forms0, St0) ->
     St5 = foldl(fun form/2, pre_scan(Forms, St4), Forms),
     post_traversal_check(Forms, St5).
 
+-spec pre_scan(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 pre_scan([{attribute,A,compile,C} | Fs], St) ->
     case is_warn_enabled(export_all, St) andalso
 	member(export_all, lists:flatten([C])) of
@@ -962,6 +1014,10 @@ pre_scan([_ | Fs], St) ->
 pre_scan([], St) ->
     St.
 
+-spec includes_qlc_hrl(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 includes_qlc_hrl(Forms, St) ->
     %% QLC calls erl_lint several times, sometimes with the compile
     %% attribute removed. The file attribute, however, is left as is.
@@ -969,9 +1025,17 @@ includes_qlc_hrl(Forms, St) ->
                   filename:basename(File) =:= "qlc.hrl"],
     St#lint{xqlc = QH =/= []}.
 
+-spec eval_file_attribute(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> [erl_parse:abstract_form() | erl_parse:form_info()].
 eval_file_attribute(Forms, St) ->
     eval_file_attr(Forms, St#lint.file).
 
+-spec eval_file_attr(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    file:filename()
+) -> [erl_parse:abstract_form() | erl_parse:form_info()].
 eval_file_attr([{attribute,_A,file,{File,_Line}}=Form | Forms], _File) ->
     [Form | eval_file_attr(Forms, File)];
 eval_file_attr([Form0 | Forms], File) ->
@@ -983,6 +1047,10 @@ eval_file_attr([], _File) ->
 %% Sets the file only on the form. This is used on post-traversal.
 %% For the remaining of the AST we rely on #lint.file.
 
+-spec set_form_file(
+    erl_parse:abstract_form() | erl_parse:form_info(),
+    file:filename()
+) -> erl_parse:abstract_form() | erl_parse:form_info().
 set_form_file({attribute,A,K,V}, File) ->
     {attribute,erl_anno:set_file(File, A),K,V};
 set_form_file({function,Anno,N,A,C}, File) ->
@@ -990,18 +1058,23 @@ set_form_file({function,Anno,N,A,C}, File) ->
 set_form_file(Form, _File) ->
     Form.
 
+-spec set_file(Obj, file:filename()) -> Obj when Obj :: dynamic().
 set_file(Ts, File) when is_list(Ts) ->
     [anno_set_file(T, File) || T <- Ts];
 set_file(T, File) ->
     anno_set_file(T, File).
 
+-spec anno_set_file(Obj, file:filename()) -> Obj.
 anno_set_file(T, File) ->
     F = fun(Anno) -> erl_anno:set_file(File, Anno) end,
     erl_parse:map_anno(F, T).
 
-%% form(Form, State) -> State'
 %%  Check a form returning the updated State. Handle generic cases here.
 
+-spec form(
+    erl_parse:abstract_form() | erl_parse:form_info(),
+    lint_state()
+) -> lint_state().
 form({error,E}, St)   -> add_error(E, St);
 form({warning,W}, St) -> add_warning(W, St);
 form({attribute,_A,file,{File,_Line}}, St) ->
@@ -1015,8 +1088,10 @@ form(Form, #lint{state=State}=St) ->
 	function -> function_state(Form, St)
     end.
 
-%% start_state(Form, State) -> State'
-
+-spec start_state(
+    erl_parse:abstract_form() | erl_parse:form_info(),
+    lint_state()
+) -> lint_state().
 start_state({attribute,Anno,module,{_,_}}=Form, St0) ->
     St1 = add_error(Anno, pmod_unsupported, St0),
     attribute_state(Form, St1#lint{state=attribute});
@@ -1033,9 +1108,10 @@ start_state(Form, St) ->
     St1 = add_error(Anno, undefined_module, St),
     attribute_state(Form, St1#lint{state=attribute}).
 
-%% attribute_state(Form, State) ->
-%%      State'
-
+-spec attribute_state(
+    erl_parse:abstract_form() | erl_parse:form_info(),
+    lint_state()
+) -> lint_state().
 attribute_state({attribute,_A,module,_M}, #lint{module=''}=St) ->
     St;
 attribute_state({attribute,A,module,_M}, St) ->
@@ -1091,6 +1167,7 @@ attribute_state(Form, St) ->
 %%
 %% These terminal elements are also the only ones where one should place
 %% documentation attributes.
+-spec track_doc(erl_parse:af_wild_attribute(), lint_state()) -> lint_state().
 track_doc({attribute, A, Tag, Doc}, #lint{}=St) when
       is_list(Doc) orelse is_binary(Doc) orelse Doc =:= false orelse Doc =:= hidden ->
     case get_doc_attr(Tag, St) of
@@ -1103,9 +1180,11 @@ track_doc(_, St) ->
 %%
 %% Helper functions to track documentation attributes
 %%
+-spec get_doc_attr(atom(), lint_state()) -> {true, erl_anno:anno(), boolean()} | false.
 get_doc_attr(moduledoc, #lint{moduledoc_defined = Moduledoc}) -> Moduledoc;
 get_doc_attr(doc, #lint{doc_defined = Doc}) -> Doc.
 
+-spec update_doc_attr(atom(), anno(), boolean(), lint_state()) -> lint_state().
 update_doc_attr(moduledoc, A, Hidden, #lint{}=St) ->
     St#lint{moduledoc_defined = {true, A, Hidden}};
 update_doc_attr(doc, A, Hidden, #lint{}=St) ->
@@ -1116,6 +1195,12 @@ update_doc_attr(doc, A, Hidden, #lint{}=St) ->
 %% That is, assume that a terminal object was reached, thus we need to reset
 %% the state so that the linter understands that we have not seen any other
 %% documentation attribute.
+-spec untrack_doc(AST, lint_state()) -> lint_state()
+    when AST :: {callback, mfa()} | {callback, {atom(), arity()}}
+              | {callback, module(), atom(), arity()}
+              | {callback, atom(), arity()}
+              | {function, atom(), arity()}
+              | dynamic().
 untrack_doc({callback,{_M, F, A}}, St) ->
     untrack_doc({callback, F, A}, St);
 untrack_doc({callback,{F, A}}, St) ->
@@ -1128,12 +1213,14 @@ untrack_doc(_KFA, St) ->
     St#lint{ doc_defined = false }.
 
 
-%% function_state(Form, State) ->
-%%      State'
 %%  Allow for record, type and opaque type definitions and spec
 %%  declarations to be intersperced within function definitions.
 %%  Dialyzer attributes are also allowed everywhere.
 
+-spec function_state(
+    erl_parse:abstract_form() | erl_parse:form_info(),
+    lint_state()
+) -> lint_state().
 function_state({attribute,A,record,{Name,Fields}}, St) ->
     record_def(A, Name, Fields, St);
 function_state({attribute,A,type,{TypeName,TypeDef,Args}}, St) ->
@@ -1163,19 +1250,24 @@ function_state({eof,Location}, St) -> eof(Location, St).
 %% eof(LastLocation, State) ->
 %%      State'
 
+-spec eof(erl_anno:location(), lint_state()) -> lint_state().
 eof(_Location, St0) ->
     St0.
 
-%% bif_clashes(Forms, State0) -> State.
-
+-spec bif_clashes(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 bif_clashes(Forms, #lint{nowarn_bif_clash=Nowarn} = St) ->
     Clashes0 = [{Name,Arity} || {function,_A,Name,Arity,_Cs} <- Forms,
                                 erl_internal:bif(Name, Arity)],
     Clashes = ordsets:subtract(ordsets:from_list(Clashes0), Nowarn),
     St#lint{clashes=Clashes}.
 
-%% not_deprecated(Forms, State0) -> State
-
+-spec not_deprecated(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 not_deprecated(Forms, #lint{compile=Opts}=St0) ->
     %% There are no line numbers in St0#lint.compile.
     MFAsAnno = [{MFA,Anno} ||
@@ -1191,8 +1283,10 @@ not_deprecated(Forms, #lint{compile=Opts}=St0) ->
                 end, St0, MAnno),
     St1#lint{not_deprecated = ordsets:from_list(Nowarn)}.
 
-%% not_removed(Forms, State0) -> State
-
+-spec not_removed(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 not_removed(Forms, #lint{compile=Opts}=St0) ->
     %% There are no line numbers in St0#lint.compile.
     MFAsAnno = [{MFA,Anno} ||
@@ -1210,6 +1304,10 @@ not_removed(Forms, #lint{compile=Opts}=St0) ->
     St1#lint{not_removed = gb_sets:from_list(Nowarn)}.
 
 %% The nowarn_bif_clash directive is not only deprecated, it's actually an error from R14A
+-spec disallowed_compile_flags(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 disallowed_compile_flags(Forms, St0) ->
     %% There are (still) no line numbers in St0#lint.compile.
     Errors0 =  [ {St0#lint.file,{L,erl_lint,disallowed_nowarn_bif_clash}} ||
@@ -1229,10 +1327,12 @@ disallowed_compile_flags(Forms, St0) ->
 	       end,
     St0#lint{errors=Errors}.
 
-%% post_traversal_check(Forms, State0) -> State.
 %% Do some further checking after the forms have been traversed and
 %% data about calls etc. have been collected.
-
+-spec post_traversal_check(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 post_traversal_check(Forms, St0) ->
     St1 = check_behaviour(St0),
     St2 = check_deprecated(Forms, St1),
@@ -1255,9 +1355,9 @@ post_traversal_check(Forms, St0) ->
     StJ = check_unexported_functions(StI),
     check_removed(Forms, StJ).
 
-%% check_behaviour(State0) -> State
 %% Check that the behaviour attribute is valid.
 
+-spec check_behaviour(lint_state()) -> lint_state().
 check_behaviour(St) ->
     case is_warn_enabled(behaviours, St) of
         true ->
@@ -1269,6 +1369,10 @@ check_behaviour(St) ->
 %% behaviour_check([{Anno,Behaviour}], State) -> State'
 %%  Check behaviours for existence and defined functions.
 
+-spec behaviour_check(
+    [{erl_anno:anno(), erl_parse:behaviour()}],
+    lint_state()
+) -> lint_state().
 behaviour_check(Bs, St0) ->
     {AllBfs0, St1} = all_behaviour_callbacks(Bs, [], St0),
     St2 = behaviour_missing_callbacks(AllBfs0, St1),
@@ -1283,14 +1387,25 @@ behaviour_check(Bs, St0) ->
     St3 = behaviour_conflicting(AllBfs, St2),
     behaviour_deprecated(AllBfs0, Exports, St3).
 
+-spec all_behaviour_callbacks(
+    [{erl_anno:anno(), erl_parse:behaviour()}],
+    [{{erl_anno:anno(), erl_parse:behaviour()}, dynamic(), dynamic()}],
+    lint_state()
+) -> {[{{erl_anno:anno(), erl_parse:behaviour()}, [fa()], [fa()]}], lint_state()}.
 all_behaviour_callbacks([{Anno,B}|Bs], Acc, St0) ->
     {Bfs0,OBfs0,St} = behaviour_callbacks(Anno, B, St0),
     all_behaviour_callbacks(Bs, [{{Anno,B},Bfs0,OBfs0}|Acc], St);
 all_behaviour_callbacks([], Acc, St) -> {reverse(Acc),St}.
 
+-spec add_behaviour_warning(anno(), tuple(), lint_state()) -> lint_state().
 add_behaviour_warning(Anno, Warning, St) when is_tuple(Warning) ->
     maybe_add_warning(Anno, Warning, St).
 
+-spec behaviour_callbacks(
+    erl_anno:anno(),
+    erl_parse:behaviour(),
+    lint_state()
+) -> {[fa()], [fa()], lint_state()}.
 behaviour_callbacks(Anno, B, St0) ->
     try B:behaviour_info(callbacks) of
         undefined ->
@@ -1332,6 +1447,11 @@ behaviour_callbacks(Anno, B, St0) ->
             {[], [], St2}
     end.
 
+-spec behaviour_deprecated(
+    [{{erl_anno:anno(), erl_parse:behaviour()}, [fa()], [fa()]}],
+    gb_sets:set(fa()),
+    lint_state()
+) -> lint_state().
 behaviour_deprecated([{{Anno, B}, Bfs, _OBfs} | T], Exports, St) ->
     behaviour_deprecated(T, Exports,
                          behaviour_deprecated(Anno, B, Bfs, Exports, St));
@@ -1340,6 +1460,7 @@ behaviour_deprecated([], _Exports, St) ->
 
 -dialyzer({no_match, behaviour_deprecated/5}).
 
+-spec behaviour_deprecated(anno(), erl_parse:behaviour(), [fa()], gb_sets:set(fa()), lint_state()) -> lint_state().
 behaviour_deprecated(Anno, B, [{F, A} | T], Exports, St0) ->
     St =
         case gb_sets:is_member({F,A}, Exports) of
@@ -1358,6 +1479,7 @@ behaviour_deprecated(Anno, B, [{F, A} | T], Exports, St0) ->
 behaviour_deprecated(_Anno, _B, [], _Exports, St) ->
     St.
 
+-spec behaviour_missing_callbacks([{{anno(), erl_parse:behaviour()}, [fa()], [fa()]}], lint_state()) -> lint_state().
 behaviour_missing_callbacks([{{Anno,B},Bfs0,OBfs}|T], St0) ->
     Bfs = ordsets:subtract(ordsets:from_list(Bfs0), ordsets:from_list(OBfs)),
     Exports = gb_sets:to_list(exports(St0)),
@@ -1374,6 +1496,7 @@ behaviour_missing_callbacks([{{Anno,B},Bfs0,OBfs}|T], St0) ->
     behaviour_missing_callbacks(T, St);
 behaviour_missing_callbacks([], St) -> St.
 
+-spec behaviour_conflicting([{{anno(), erl_parse:behaviour()}, [fa()]}], lint_state()) -> lint_state().
 behaviour_conflicting(AllBfs, St) ->
     R0 = sofs:relation(AllBfs, [{item,[callback]}]),
     R1 = sofs:family_to_relation(R0),
@@ -1383,12 +1506,20 @@ behaviour_conflicting(AllBfs, St) ->
     R = sofs:to_external(R4),
     behaviour_add_conflicts(R, St).
 
+-spec behaviour_add_conflicts(sofs:external_set(), lint_state()) -> lint_state().
 behaviour_add_conflicts([{Cb,[{FirstAnno,FirstB}|Cs]}|T], St0) ->
     FirstL = element(2, loc(FirstAnno, St0)),
     St = behaviour_add_conflict(Cs, Cb, FirstL, FirstB, St0),
     behaviour_add_conflicts(T, St);
 behaviour_add_conflicts([], St) -> St.
 
+-spec behaviour_add_conflict(
+    [{anno(), erl_parse:behaviour()}],
+    fa(),
+    term(),
+    module(),
+    lint_state()
+) -> lint_state().
 behaviour_add_conflict([{Anno,B}|Cs], Cb, FirstL, FirstB, St0) ->
     St = add_behaviour_warning(Anno,
                                {conflicting_behaviours,Cb,B,FirstL,FirstB},
@@ -1396,8 +1527,10 @@ behaviour_add_conflict([{Anno,B}|Cs], Cb, FirstL, FirstB, St0) ->
     behaviour_add_conflict(Cs, Cb, FirstL, FirstB, St);
 behaviour_add_conflict([], _, _, _, St) -> St.
 
-%% check_deprecated(Forms, State0) -> State
-
+-spec check_deprecated(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_deprecated(Forms, St0) ->
     Exports = exports(St0),
     X = ignore_predefined_funcs(gb_sets:to_list(Exports)),
@@ -1409,6 +1542,7 @@ check_deprecated(Forms, St0) ->
                   add_error(Anno, E, St1)
           end, St0, Bad).
 
+-spec depr_cat(term(), [fa()], module()) -> [{bad_deprecated, {atom(), '_' | arity()}} | {invalid_deprecated, term()}].
 depr_cat({F, A, Flg}=D, X, Mod) ->
     case deprecated_flag(Flg) of
         false -> [{invalid_deprecated,D}];
@@ -1421,6 +1555,7 @@ depr_cat(module, _X, _Mod) ->
 depr_cat(D, _X, _Mod) ->
     [{invalid_deprecated,D}].
 
+-spec depr_fa(term(), term(), [fa()], module()) -> [{bad_deprecated, {atom(), '_' | arity()}} | {invalid_deprecated, term()}].
 depr_fa('_', '_', _X, _Mod) ->
     [];
 depr_fa(F, '_', X, _Mod) when is_atom(F) ->
@@ -1441,17 +1576,21 @@ depr_fa(F, A, X, Mod) when is_atom(F), is_integer(A), A >= 0 ->
 depr_fa(F, A, _X, _Mod) ->
     [{invalid_deprecated,{F,A}}].
 
+-spec deprecated_flag(term()) -> boolean().
 deprecated_flag(next_version) -> true;
 deprecated_flag(next_major_release) -> true;
 deprecated_flag(eventually) -> true;
 deprecated_flag(String) -> deprecated_desc(String).
 
+-spec deprecated_desc(term()) -> boolean().
 deprecated_desc([Char | Str]) when is_integer(Char) -> deprecated_desc(Str);
 deprecated_desc([]) -> true;
 deprecated_desc(_) -> false.
 
-%% check_removed(Forms, State0) -> State
-
+-spec check_removed(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_removed(Forms, St0) ->
     Exports = exports(St0),
     X = ignore_predefined_funcs(gb_sets:to_list(Exports)),
@@ -1463,6 +1602,7 @@ check_removed(Forms, St0) ->
                   add_error(Anno, E, St1)
           end, St0, Bad).
 
+-spec removed_cat({atom(), arity(), string()} | fa() | module(), [fa()], module()) -> [{bad_removed, term()} | {invalid_removed, term()}].
 removed_cat({F, A, Desc}=R, X, Mod) ->
     case removed_desc(Desc) of
         false -> [{invalid_removed,R}];
@@ -1475,6 +1615,7 @@ removed_cat(module, X, Mod) ->
 removed_cat(R, _X, _Mod) ->
     [{invalid_removed,R}].
 
+-spec removed_fa(atom(), atom() | arity(), [fa()], module()) -> [{bad_removed, term()} | {invalid_removed, term()}].
 removed_fa('_', '_', X, _Mod) ->
     case X of
         [_|_] -> [{bad_removed,{'_','_'}}];
@@ -1499,11 +1640,13 @@ removed_fa(F, A, X, Mod) when is_atom(F), is_integer(A), A >= 0 ->
 removed_fa(F, A, _X, _Mod) ->
     [{invalid_removed,{F,A}}].
 
+-spec removed_desc(term()) -> boolean().
 removed_desc([Char | Str]) when is_integer(Char) -> removed_desc(Str);
 removed_desc([]) -> true;
 removed_desc(_) -> false.
 
 %% Ignores functions added by erl_internal:add_predefined_functions/1
+-spec ignore_predefined_funcs([fa()]) -> [fa()].
 ignore_predefined_funcs([{behaviour_info,1} | Fs]) ->
     ignore_predefined_funcs(Fs);
 ignore_predefined_funcs([{module_info,0} | Fs]) ->
@@ -1515,8 +1658,10 @@ ignore_predefined_funcs([Other | Fs]) ->
 ignore_predefined_funcs([]) ->
     [].
 
-%% check_imports(Forms, State0) -> State
-
+-spec check_imports(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_imports(Forms, St0) ->
     case is_warn_enabled(unused_import, St0) of
         false ->
@@ -1531,13 +1676,17 @@ check_imports(Forms, St0) ->
             func_location_warning(unused_import, Bad, St0)
     end.
 
-%% check_inlines(Forms, State0) -> State
-
+-spec check_inlines(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_inlines(Forms, St0) ->
     check_option_functions(Forms, inline, bad_inline, St0).
 
-%% check_unused_functions(Forms, State0) -> State
-
+-spec check_unused_functions(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_unused_functions(Forms, St0) ->
     St1 = check_option_functions(Forms, nowarn_unused_function,
                                  bad_nowarn_unused_function, St0),
@@ -1559,15 +1708,18 @@ check_unused_functions(Forms, St0) ->
             func_location_warning(unused_function, Bad, St1)
     end.
 
+-spec initially_reached(lint_state()) -> [fa()].
 initially_reached(#lint{exports=Exp,on_load=OnLoad}) ->
     OnLoad ++ gb_sets:to_list(Exp).
 
 %% reached_functions(RootSet, CallRef) -> [ReachedFunc].
 %% reached_functions(RootSet, CallRef, [ReachedFunc]) -> [ReachedFunc].
 
+-spec reached_functions([fa()], #{fa() => [fa()]}) -> [fa()].
 reached_functions(Root, Ref) ->
     reached_functions(Root, [], Ref, gb_sets:empty()).
 
+-spec reached_functions([fa()], [[fa()]], #{fa() => [fa()]}, gb_sets:set(fa())) -> [fa()].
 reached_functions([R|Rs], More0, Ref, Reached0) ->
     case gb_sets:is_element(R, Reached0) of
         true -> reached_functions(Rs, More0, Ref, Reached0);
@@ -1584,6 +1736,7 @@ reached_functions([], [], _Ref, Reached) -> gb_sets:to_list(Reached).
 
 %% check_undefined_functions(State0) -> State
 
+-spec check_undefined_functions(lint_state()) -> lint_state().
 check_undefined_functions(#lint{called=Called0,defined=Def0}=St0) ->
     Called = sofs:relation(Called0, [{func,location}]),
     Def = sofs:from_external(gb_sets:to_list(Def0), [func]),
@@ -1591,6 +1744,7 @@ check_undefined_functions(#lint{called=Called0,defined=Def0}=St0) ->
     FAList = sofs:to_external(Def),
     func_location_error(undefined_function, Undef, St0, FAList).
 
+-spec most_possible_string(atom(), [string()]) -> atom() | [].
 most_possible_string(Name, PossibleNames) ->
     case PossibleNames of
         [] -> [];
@@ -1609,8 +1763,7 @@ most_possible_string(Name, PossibleNames) ->
             end
     end.
 
-%% check_undefined_types(State0) -> State
-
+-spec check_undefined_types(lint_state()) -> lint_state().
 check_undefined_types(#lint{usage=Usage,types=Def}=St0) ->
     Used = Usage#usage.used_types,
     UTAs = maps:keys(Used),
@@ -1624,13 +1777,21 @@ check_undefined_types(#lint{usage=Usage,types=Def}=St0) ->
                          end, St, UsedTypeList)
 	  end, St0, Undef).
 
-%% check_bif_clashes(Forms, State0) -> State
-
+-spec check_bif_clashes(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_bif_clashes(Forms, St0) ->
     %% St0#lint.defined is now complete.
     check_option_functions(Forms, nowarn_bif_clash,
                            bad_nowarn_bif_clash, St0).
 
+-spec check_option_functions(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    atom(),
+    atom(),
+    lint_state()
+) -> lint_state().
 check_option_functions(Forms, Tag0, Type, St0) ->
     %% There are no line numbers in St0#lint.compile.
     FAsAnno = [{FA,Anno} || {attribute, Anno, compile, Args} <- Forms,
@@ -1642,6 +1803,10 @@ check_option_functions(Forms, Tag0, Type, St0) ->
     Bad = [{FA,Anno} || {FA,Anno} <- FAsAnno, not member(FA, DefFunctions)],
     func_location_error(Type, Bad, St0, DefFunctions).
 
+-spec check_nifs(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_nifs(Forms, St0) ->
     FAsAnno = [{FA,Anno} || {attribute, Anno, nifs, Args} <- Forms,
                             FA <- Args],
@@ -1656,6 +1821,7 @@ check_nifs(Forms, St0) ->
     DefFunctions1 = gb_sets:to_list(DefFunctions),
     func_location_error(undefined_nif, Bad, St1, DefFunctions1).
 
+-spec check_unexported_functions(lint_state()) -> lint_state().
 check_unexported_functions(#lint{callbacks=Cs,
                                  optional_callbacks=OCs,
                                  exports=Es0}=St) ->
@@ -1667,6 +1833,7 @@ check_unexported_functions(#lint{callbacks=Cs,
               St#lint{exports=Es},
               St#lint.remote_self_calls).
 
+-spec check_unexported_functions_1(fa(), gb_sets:set(anno()), lint_state()) -> lint_state().
 check_unexported_functions_1({F, A}=Key, Annos, Acc0) ->
     #lint{module=M,exports=Es} = Acc0,
     case not gb_sets:is_element(Key, Es) of
@@ -1680,14 +1847,17 @@ check_unexported_functions_1({F, A}=Key, Annos, Acc0) ->
             Acc0
     end.
 
+-spec nowarn_function(atom(), [compile:option()]) -> [fa()].
 nowarn_function(Tag, Opts) ->
     ordsets:from_list([FA || {Tag1,FAs} <- Opts,
                              Tag1 =:= Tag,
                              FA <- lists:flatten([FAs])]).
 
+-spec func_location_warning(atom(), [{{fa(), module()}, anno()}], lint_state()) -> lint_state().
 func_location_warning(Type, Fs, St) ->
     foldl(fun ({F,Anno}, St0) -> add_warning(Anno, {Type,F}, St0) end, St, Fs).
 
+-spec func_location_error(atom(), [{fa(), anno()}], lint_state(), [fa()]) -> lint_state().
 func_location_error(Type, [{F,Anno}|Fs], St0, FAList) ->
     {Name, Arity} = F,
     PossibleAs = lists:sort([A || {FName, A} <:- FAList, FName =:= Name]),
@@ -1709,6 +1879,10 @@ func_location_error(Type, [{F,Anno}|Fs], St0, FAList) ->
 func_location_error(_, [], St, _) ->
     St.
 
+-spec check_untyped_records(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_untyped_records(Forms, St0) ->
     case is_warn_enabled(untyped_record, St0) of
 	true ->
@@ -1732,6 +1906,10 @@ check_untyped_records(Forms, St0) ->
 	    St0
     end.
 
+-spec check_unused_records(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_unused_records(Forms, St0) ->
     AttrFiles = [File || {attribute,_A,file,{File,_Line}} <- Forms],
     case {is_warn_enabled(unused_record, St0),AttrFiles} of
@@ -1761,6 +1939,7 @@ check_unused_records(Forms, St0) ->
             St0
     end.
 
+-spec check_callback_information(lint_state()) -> lint_state().
 check_callback_information(#lint{callbacks = Callbacks,
                                  optional_callbacks = OptionalCbs,
 				 defined = Defined} = St0) ->
@@ -1880,6 +2059,7 @@ import(Anno, {Mod,Fs}, St00) ->
 	    end
     end.
 
+-spec check_imports(anno(), ordsets:ordset(fa()), orddict:orddict(fa(), module())) -> [{fa(), module()} | {bif, fa(), erlang}].
 check_imports(_Anno, Fs, Is) ->
     foldl(fun (F, Efs) ->
               case orddict:find(F, Is) of
@@ -1894,6 +2074,7 @@ check_imports(_Anno, Fs, Is) ->
                       end
               end end, [], Fs).
 
+-spec add_imports(module(), ordsets:ordset(fa()), orddict:orddict(fa(), module())) -> orddict:orddict(fa(), module()).
 add_imports(Mod, Fs, Is) ->
     foldl(fun (F, Is0) -> orddict:store(F, Mod, Is0) end, Is, Fs).
 
@@ -1929,6 +2110,7 @@ on_load(Anno, Val, St) ->
     %% Bad syntax.
     add_error(Anno, {bad_on_load,Val}, St).
 
+-spec check_on_load(lint_state()) -> lint_state().
 check_on_load(#lint{defined=Defined,on_load=[{_,0}=Fa],
 		    on_load_anno=Anno}=St) ->
     case gb_sets:is_member(Fa, Defined) of
@@ -1959,6 +2141,13 @@ call_function(Anno0, F, A, #lint{usage=Usage0,called=Cd,func=Func,file=File}=St)
 
 %% function(Anno, Name, Arity, Clauses, State) -> State.
 
+-spec function(
+    anno(),
+    erl_parse:function_name(),
+    arity(),
+    erl_parse:af_clause_seq(),
+    lint_state()
+) -> lint_state().
 function(Anno, Name, Arity, Cs, St0) ->
     St1 = St0#lint{func={Name,Arity}},
     St2 = define_function(Anno, Name, Arity, St1),
@@ -1981,18 +2170,19 @@ define_function(Anno, Name, Arity, St0) ->
             end
     end.
 
+-spec function_check_max_args(anno(), arity(), lint_state()) -> lint_state().
 function_check_max_args(Anno, Arity, St) when Arity > ?MAX_ARGUMENTS ->
     add_error(Anno, {too_many_arguments,Arity}, St);
 function_check_max_args(_, _, St) -> St.
 
-%% clauses([Clause], State) -> {VarTable, State}.
-
+-spec clauses([erl_parse:af_clause()], lint_state()) -> lint_state().
 clauses(Cs, St) ->
     foldl(fun (C, St0) ->
                   {_,St1} = clause(C, St0),
                   St1
           end, St, Cs).
 
+-spec clause(erl_parse:af_clause(), lint_state()) -> {var_table(), lint_state()}.
 clause({clause,_Anno,H,G,B}, St0) ->
     Vt0 = [],
     {Hvt,Hnew,St1} = head(H, Vt0, St0),
@@ -2008,9 +2198,11 @@ clause({clause,_Anno,H,G,B}, St0) ->
 %%  Check a patterns in head returning "all" variables. Not updating the
 %%  known variable list will result in multiple error messages/warnings.
 
+-spec head([erl_parse:af_pattern()], var_table(), lint_state()) -> {var_table(), var_table(), lint_state()}.
 head(Ps, Vt, St0) ->
     head(Ps, Vt, Vt, St0).    % Old = Vt
 
+-spec head([erl_parse:af_pattern()], var_table(), var_table(), lint_state()) -> {var_table(), var_table(), lint_state()}.
 head([P|Ps], Vt0, Old, St0) ->
     {Pvt, Pnew, St1} = pattern(P, Vt0, Old, St0),
     {Psvt, Psnew, St2} = head(Ps, Vt0, Old, St1),
@@ -2034,9 +2226,16 @@ head([], _Vt, _Env, St) -> {[],[],St}.
 %%  A = 4, fun(<<A:A>>) -> % A #2 unused
 %%  A = 4, fun(<<A:8,16:A>>) -> % A #1 unused
 
+-spec pattern(erl_parse:af_pattern(), var_table(), lint_state()) -> {var_table(), var_table(), lint_state()}.
 pattern(P, Vt, St) ->
     pattern(P, Vt, Vt, St).    % Old = Vt
 
+-spec pattern(
+    erl_parse:af_pattern(),
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 pattern({var,_Anno,'_'}, _Vt, _Old, St) ->
     {[],[],St}; %Ignore anonymous variable
 pattern({var,Anno,V}, _Vt, Old, St) ->
@@ -2108,6 +2307,7 @@ pattern(Pat, _Vt, _Old, St) ->
         false -> {[],[],add_error(element(2, Pat), illegal_pattern, St)}
     end.
 
+-spec pattern_list([erl_parse:af_pattern()], var_table(), var_table(), lint_state()) -> {var_table(), var_table(), lint_state()}.
 pattern_list(Ps, Vt0, Old, St) ->
     foldl(fun (P, {Psvt, Psnew,St0}) ->
                   {Pvt, Pnew, St1} = pattern(P, Vt0, Old, St0),
@@ -2117,12 +2317,13 @@ pattern_list(Ps, Vt0, Old, St) ->
           end, {[],[],St}, Ps).
 
 %% Check for '_' initializing no fields.
+-spec check_multi_field_init([erl_parse:af_record_field(erl_parse:af_pattern())], anno(), [erl_parse:af_field_decl()], lint_state()) -> lint_state().
 check_multi_field_init(Fs, Anno, Fields, St) ->
     case init_fields(Fs, Anno, Fields) =:= [] of
         true ->
             case has_wildcard_field(Fs) of
                 no -> St;
-                WildAnno -> add_error(WildAnno, bad_multi_field_init, St)
+                {yes, WildAnno} -> add_error(WildAnno, bad_multi_field_init, St)
             end;
         false -> St
     end.
@@ -2131,6 +2332,7 @@ check_multi_field_init(Fs, Anno, Fields, St) ->
 %%  Test if a general expression is a valid pattern expression.
 
 -doc false.
+-spec is_pattern_expr(erl_parse:af_pattern()) -> boolean().
 is_pattern_expr(Expr) ->
     case is_pattern_expr_1(Expr) of
 	false -> false;
@@ -2146,6 +2348,7 @@ is_pattern_expr(Expr) ->
 	    end
     end.
 
+-spec is_pattern_expr_1(erl_parse:af_pattern()) -> boolean().
 is_pattern_expr_1({char,_Anno,_C}) -> true;
 is_pattern_expr_1({integer,_Anno,_I}) -> true;
 is_pattern_expr_1({float,_Anno,_F}) -> true;
@@ -2161,6 +2364,12 @@ is_pattern_expr_1({op,_Anno,Op,A1,A2}) ->
     erl_internal:arith_op(Op, 2) andalso all(fun is_pattern_expr_1/1, [A1,A2]);
 is_pattern_expr_1(_Other) -> false.
 
+-spec pattern_map(
+    [erl_parse:af_assoc_exact(erl_parse:af_pattern())],
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 pattern_map(Ps, Vt0, Old, St0) ->
     foldl(fun({map_field_assoc,A,_,_}, {Psvt,Psnew,St1}) ->
                   {Psvt,Psnew,add_error(A, illegal_map_assoc_in_pattern, St1)};
@@ -2178,12 +2387,24 @@ pattern_map(Ps, Vt0, Old, St0) ->
 %%           {UpdVarTable,NewVars,State}.
 %%  Check a pattern group.
 
+-spec pattern_bin(
+    [erl_parse:af_binelement(erl_parse:af_pattern())],
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 pattern_bin(Es, Vt, Old, St0) ->
     {_,Esvt,Esnew,St1} = foldl(fun (E, Acc) ->
                                        pattern_element(E, Vt, Old, Acc)
                                end, {{0,0},[],[],St0}, Es),
     {Esvt,Esnew,St1}.
 
+-spec pattern_element(
+    erl_parse:af_binelement(erl_parse:af_pattern()),
+    var_table(),
+    var_table(),
+    {{integer(), anno()}, var_table(), var_table(), lint_state()}
+) -> {{integer(), anno()}, var_table(), var_table(), lint_state()}.
 pattern_element({bin_element,Anno,{string,_,_},Size,Ts}=Be, Vt,
 		Old, {Sz,Esvt,Esnew,St0}=Acc) ->
     case good_string_size_type(Size, Ts) of
@@ -2196,6 +2417,12 @@ pattern_element({bin_element,Anno,{string,_,_},Size,Ts}=Be, Vt,
 pattern_element(Be, Vt, Old, Acc) ->
     pattern_element_1(Be, Vt, Old, Acc).
 
+-spec pattern_element_1(
+    erl_parse:af_binelement(erl_parse:af_pattern()),
+    var_table(),
+    var_table(),
+    {{integer(), anno()}, var_table(), var_table(), lint_state()}
+) -> {{integer(), anno()}, var_table(), var_table(), lint_state()}.
 pattern_element_1({bin_element,Anno,E,Sz0,Ts}, Vt, Old,
                   {{PrevSize,PrevAnno},Esvt,Esnew,St0}) ->
     {Pevt,Penew,St1} = pat_bit_expr(E, Old, Esnew, St0),
@@ -2213,6 +2440,10 @@ pattern_element_1({bin_element,Anno,E,Sz0,Ts}, Vt, Old,
     {{Sz4,Anno},vtmerge(Szvt,vtmerge(Pevt, Esvt)),
      vtmerge(Sznew,vtmerge(Esnew, Penew)), St5}.
 
+-spec good_string_size_type(
+    erl_parse:af_binelement_size(),
+    erl_parse:type_specifier_list()
+) -> boolean().
 good_string_size_type(default, default) ->
     true;
 good_string_size_type(default, Ts) ->
@@ -2227,6 +2458,12 @@ good_string_size_type(_, _) -> false.
 %%              {UpdVarTable,UpdNewVars,State}.
 %%  Check pattern bit expression, only allow really valid patterns!
 
+-spec pat_bit_expr(
+    erl_parse:af_pattern(),
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 pat_bit_expr({var,_,'_'}, _Old, _New, St) -> {[],[],St};
 pat_bit_expr({var,Anno,V}, Old, New, St) -> pat_var(V, Anno, Old, New, St);
 pat_bit_expr({string,_,_}, _Old, _new, St) -> {[],[],St};
@@ -2242,6 +2479,12 @@ pat_bit_expr(P, _Old, _New, St) ->
 %%             {Value,UpdVarTable,UpdNewVars,State}.
 %%  Check pattern size expression, only allow really valid sizes!
 
+-spec pat_bit_size(
+    erl_parse:af_binelement_size(),
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {dynamic(), var_table(), var_table(), lint_state()}.
 pat_bit_size(default, _Vt, _New, St) -> {default,[],[],St};
 pat_bit_size({var,Anno,V}, Vt0, New0, St0) ->
     {Vt,New,St1} = pat_binsize_var(V, Anno, Vt0, New0, St0),
@@ -2269,6 +2512,7 @@ pat_bit_size(Size, Vt0, New0, St0) ->
             {unknown,Vt,New,St}
     end.
 
+-spec is_bit_size_illegal(erl_parse:abstract_expr()) -> boolean().
 is_bit_size_illegal({atom,_,_}) -> true;
 is_bit_size_illegal({bin,_,_}) -> true;
 is_bit_size_illegal({cons,_,_,_}) -> true;
@@ -2281,12 +2525,24 @@ is_bit_size_illegal(_) -> false.
 %% expr_bin([Element], VarTable, State, CheckFun) -> {UpdVarTable,State}.
 %%  Check an expression group.
 
+-spec expr_bin(
+    [erl_parse:af_binelement(erl_parse:af_guard_test() | erl_parse:abstract_expr())],
+    var_table(),
+    lint_state(),
+    fun()
+) -> {var_table(), lint_state()}.
 expr_bin(Es, Vt, St0, Check) ->
     {Esvt,St1} = foldl(fun (E, Acc) ->
                                bin_element(E, Vt, Acc, Check)
                        end, {[],St0}, Es),
     {Esvt,St1}.
 
+-spec bin_element(
+    erl_parse:af_binelement(erl_parse:af_guard_test() | erl_parse:abstract_expr()),
+    var_table(),
+    {var_table(), lint_state()},
+    fun()
+) -> {var_table(), lint_state()}.
 bin_element({bin_element,Anno,E,Sz0,Ts}, Vt, {Esvt,St0}, Check) ->
     {Vt1,St1} = Check(E, Vt, St0),
     {Sz1,Vt2,St2} = bit_size(Sz0, Vt, St1, Check),
@@ -2294,6 +2550,12 @@ bin_element({bin_element,Anno,E,Sz0,Ts}, Vt, {Esvt,St0}, Check) ->
     {_Sz3,St4} = bit_size_check(Anno, Sz2, Bt, St3),
     {vtmerge([Vt2,Vt1,Esvt]),St4}.
 
+-spec bit_size(
+    erl_parse:af_binelement_size(),
+    var_table(),
+    lint_state(),
+    fun()
+) -> {erl_bits:size() | default, var_table(), lint_state()}.
 bit_size(default, _Vt, St, _Check) -> {default,[],St};
 bit_size({atom,_Anno,all}, _Vt, St, _Check) -> {all,[],St};
 bit_size(Size, Vt, St, Check) ->
@@ -2316,6 +2578,12 @@ bit_size(Size, Vt, St, Check) ->
 %% bit_type(Anno, Size, TypeList, State) ->  {Size,#bittype,St}.
 %%  Perform warning check on type and size.
 
+-spec bit_type(
+    anno(),
+    'default' | erl_bits:size(),
+    'default' | [erl_bits:type()],
+    lint_state()
+) -> {undefined | erl_bits:size(), #bittype{}, lint_state()}.
 bit_type(Anno, Size0, Type, St) ->
     case erl_bits:set_bit_type(Size0, Type) of
         {ok,Size1,Bt} -> {Size1,Bt,St};
@@ -2329,6 +2597,7 @@ bit_type(Anno, Size0, Type, St) ->
 %%  Do some checking & warnings on types
 %%   float == 16 or 32 or 64
 
+-spec bit_size_check(anno(), erl_bits:size() | undefined, #bittype{}, lint_state()) -> {erl_bits:size() | undefined, lint_state()}.
 bit_size_check(_Anno, unknown, _, St) -> {unknown,St};
 bit_size_check(_Anno, undefined, #bittype{type=Type}, St) ->
     true = (Type =:= utf8) or (Type =:= utf16) or (Type =:= utf32), %Assertion.
@@ -2344,6 +2613,7 @@ bit_size_check(Anno, Size, #bittype{type=Type,unit=Unit}, St)
     St2 = elemtype_check(Anno, Type, Sz, St),
     {Sz,St2}.
 
+-spec elemtype_check(anno(), bt_type() | undefined, integer(), lint_state()) -> lint_state().
 elemtype_check(_Anno, float, 16, St) -> St;
 elemtype_check(_Anno, float, 32, St) -> St;
 elemtype_check(_Anno, float, 64, St) -> St;
@@ -2357,6 +2627,7 @@ elemtype_check(_Anno, _Type, _Size, St) ->  St.
 %%  Check a guard, return all variables.
 
 %% Disjunction of guard conjunctions
+-spec guard([erl_parse:af_guard()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 guard([L|R], Vt, St0) when is_list(L) ->
     {Gvt, St1} = guard_tests(L, Vt, St0),
     {Gsvt, St2} = guard(R, vtupdate(Gvt, Vt), St1),
@@ -2365,6 +2636,7 @@ guard(L, Vt, St0) ->
     guard_tests(L, Vt, St0).
 
 %% guard conjunction
+-spec guard_tests([erl_parse:af_guard_test()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 guard_tests([G|Gs], Vt, St0) ->
     {Gvt,St1} = guard_test(G, Vt, St0),
     {Gsvt,St2} = guard_tests(Gs, vtupdate(Gvt, Vt), St1),
@@ -2377,11 +2649,13 @@ guard_tests([], _Vt, St) -> {[],St}.
 %%  expressions in guards including the new is_XXX type tests, but
 %%  only allow the old type tests at the top level.
 
+-spec guard_test(erl_parse:af_guard_test(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 guard_test(G, Vt, St0) ->
     St1 = obsolete_guard(G, St0),
     guard_test2(G, Vt, St1).
 
 %% Specially handle record type test here.
+-spec guard_test2(erl_parse:af_guard_test(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 guard_test2({call,Anno,{atom,Ar,record},[E,A]}, Vt, St0) ->
     gexpr({call,Anno,{atom,Ar,is_record},[E,A]}, Vt, St0);
 guard_test2({call,Anno,{atom,_Aa,F},As}=G, Vt, St0) ->
@@ -2402,10 +2676,8 @@ guard_test2(G, Vt, St) ->
     %% Everything else is a guard expression.
     gexpr(G, Vt, St).
 
-%% gexpr(GuardExpression, VarTable, State) ->
-%%      {UsedVarTable,State'}
 %%  Check a guard expression, returns NewVariables.
-
+-spec gexpr(erl_parse:af_guard_test(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 gexpr({var,Anno,V}, Vt, St) ->
     expr_var(V, Anno, Vt, St);
 gexpr({char,_Anno,_C}, _Vt, St) -> {[],St};
@@ -2518,6 +2790,7 @@ gexpr(E, _Vt, St) ->
 %% gexpr_list(Expressions, VarTable, State) ->
 %%      {UsedVarTable,State'}
 
+-spec gexpr_list([erl_parse:af_guard_test()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 gexpr_list(Es, Vt, St) ->
     foldl(fun (E, {Esvt,St0}) ->
                   {Evt,St1} = gexpr(E, Vt, St0),
@@ -2544,6 +2817,10 @@ is_guard_test(E) ->
 
 %% is_guard_test(Expression, Forms) -> boolean().
 -doc false.
+-spec is_guard_test(
+    erl_parse:abstract_expr(),
+    [erl_parse:abstract_form() | erl_parse:form_info()]
+) -> boolean().
 is_guard_test(Expression, Forms) ->
     is_guard_test(Expression, Forms, fun(_) -> false end).
 
@@ -2579,7 +2856,13 @@ is_guard_test(Expression, Forms, IsOverridden) ->
 
     is_guard_test2(NoFileExpression, {F,IsOverridden}).
 
+-type fields() :: #{erl_parse:record_name() => {anno(), [erl_parse:af_field_decl()]}}.
+
 %% is_guard_test2(Expression, RecordDefs :: dict:dict()) -> boolean().
+-spec is_guard_test2(
+    erl_parse:abstract_expr(),
+    {fun(() -> fields()) | fields(), fun((fa()) -> boolean())}
+) -> boolean().
 is_guard_test2({call,Anno,{atom,Ar,record},[E,A]}, Info) ->
     is_gexpr({call,Anno,{atom,Ar,is_record},[E,A]}, Info);
 is_guard_test2({call,Anno,{remote,_Ar,{atom,_Am,erlang},
@@ -2605,8 +2888,13 @@ is_guard_test2(G, Info) ->
 %%  Test if an expression is a guard expression.
 
 -doc false.
+-spec is_guard_expr(erl_parse:abstract_expr()) -> boolean().
 is_guard_expr(E) -> is_gexpr(E, {[],fun({_,_}) -> false end}).
 
+-spec is_gexpr(
+    erl_parse:abstract_expr(),
+    {fun(() -> fields()) | [] | fields(), fun((fa()) -> boolean())}
+) -> boolean().
 is_gexpr({var,_A,_V}, _Info) -> true;
 is_gexpr({char,_A,_C}, _Info) -> true;
 is_gexpr({integer,_A,_I}, _Info) -> true;
@@ -2656,6 +2944,7 @@ is_gexpr({op,_A,Op,A1,A2}, Info) ->
     is_gexpr_op(Op, 2) andalso is_gexpr_list([A1,A2], Info);
 is_gexpr(_Other, _Info) -> false.
 
+-spec is_gexpr_op(atom(), arity()) -> boolean().
 is_gexpr_op(Op, A) ->
     try erl_internal:op_type(Op, A) of
         arith -> true;
@@ -2666,8 +2955,16 @@ is_gexpr_op(Op, A) ->
     catch _:_ -> false
     end.
 
+-spec is_gexpr_list(
+    [erl_parse:abstract_expr()],
+    {fun(() -> fields()) | [] | fields(), fun((fa()) -> boolean())}
+) -> boolean().
 is_gexpr_list(Es, Info) -> all(fun (E) -> is_gexpr(E, Info) end, Es).
 
+-spec is_map_fields(
+    [erl_parse:af_assoc(erl_parse:abstract_expr())],
+    {fun(() -> fields()) | [] | fields(), fun((fa()) -> boolean())}
+) -> boolean().
 is_map_fields([{Tag,_,K,V}|Fs], Info) when Tag =:= map_field_assoc;
                                            Tag =:= map_field_exact ->
     is_gexpr(K, Info) andalso
@@ -2676,6 +2973,12 @@ is_map_fields([{Tag,_,K,V}|Fs], Info) when Tag =:= map_field_assoc;
 is_map_fields([], _Info) -> true;
 is_map_fields(_T, _Info) -> false.
 
+-spec is_gexpr_fields(
+    [erl_parse:af_record_field(erl_parse:abstract_expr())],
+    anno(),
+    erl_parse:record_name(),
+    {fields(), fun((fa()) -> boolean())}
+) -> boolean().
 is_gexpr_fields(Fs, A, Name, {RDs,_}=Info) ->
     IFs = case maps:find(Name, RDs) of
               {ok,{_Anno,Fields}} -> Fs ++ init_fields(Fs, A, Fields);
@@ -2688,6 +2991,7 @@ is_gexpr_fields(Fs, A, Name, {RDs,_}=Info) ->
 %%      {UsedVarTable,State'}
 %%  Check a sequence of expressions, return all variables.
 
+-spec exprs([erl_parse:abstract_expr()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 exprs([E|Es], Vt, St0) ->
     {Evt,St1} = expr(E, Vt, St0),
     {Esvt,St2} = exprs(Es, vtupdate(Evt, Vt), St1),
@@ -2700,6 +3004,7 @@ exprs([], _Vt, St) -> {[],St}.
 %%  mark illegally exported variables, e.g. from catch, as unsafe to better
 %%  show why unbound.
 
+-spec expr(erl_parse:abstract_expr(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 expr({var,Anno,V}, Vt, St) ->
     expr_var(V, Anno, Vt, St);
 expr({char,_Anno,_C}, _Vt, St) -> {[],St};
@@ -2748,7 +3053,7 @@ expr({record,Anno,Rec,Name,Upds}, Vt, St0) ->
                           end ),
     case has_wildcard_field(Upds) of
         no -> {vtmerge(Rvt, Usvt), warn_if_literal_update(Anno, Rec, St2)};
-        WildAnno -> {[],add_error(WildAnno, {wildcard_in_update,Name}, St2)}
+        {yes, WildAnno} -> {[],add_error(WildAnno, {wildcard_in_update,Name}, St2)}
     end;
 expr({bin,_Anno,Fs}, Vt, St) ->
     expr_bin(Fs, Vt, St, fun expr/3);
@@ -2913,6 +3218,7 @@ expr({ssa_check_when,_Anno,_WantedResult,_Args,_Tag,_Exprs}, _Vt, St) ->
 
 %% Check a call to function without a module name. This can be a call
 %% to a BIF or a local function.
+-spec check_call(anno(), erl_parse:function_name(), [erl_parse:abstract_expr() | undefined], anno(), lint_state()) -> lint_state().
 check_call(Anno, record_info, [_,_]=As, Aa, St0) ->
     check_record_info_call(Anno, Aa, As, St0);
 check_call(Anno, F, As, _Aa, St0) ->
@@ -2960,6 +3266,7 @@ check_call(Anno, F, As, _Aa, St0) ->
 %% Checks whether 0.0 occurs naked in the LHS or RHS of an equality check. Note
 %% that we do not warn when it's being used as arguments for expressions in
 %% in general: `A =:= abs(0.0)` is fine.
+-spec expr_check_match_zero(erl_parse:abstract_expr(), lint_state()) -> lint_state().
 expr_check_match_zero({float,Anno,F}, St) ->
     if
         F == 0 ->
@@ -2977,16 +3284,19 @@ expr_check_match_zero(_Expr, St) ->
 %% expr_list(Expressions, Variables, State) ->
 %%      {UsedVarTable,State}
 
+-spec expr_list([erl_parse:abstract_expr()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 expr_list(Es, Vt, St0) ->
     foldl(fun (E, {Esvt, St1}) ->
                   {Evt, St2} = expr(E, Vt, St1),
                   vtmerge_pat(Evt, Esvt, St2)
           end, {[], St0}, Es).
 
+-spec record_expr(anno(), erl_parse:abstract_expr(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 record_expr(Anno, Rec, Vt, St0) ->
     St1 = warn_invalid_record(Anno, Rec, St0),
     expr(Rec, Vt, St1).
 
+-spec check_assoc_fields([erl_parse:af_assoc(term())], lint_state()) -> lint_state().
 check_assoc_fields([{map_field_exact,Anno,_,_}|Fs], St) ->
     check_assoc_fields(Fs, add_error(Anno, illegal_map_construction, St));
 check_assoc_fields([{map_field_assoc,_,_,_}|Fs], St) ->
@@ -2994,6 +3304,7 @@ check_assoc_fields([{map_field_assoc,_,_,_}|Fs], St) ->
 check_assoc_fields([], St) ->
     St.
 
+-spec map_fields([erl_parse:af_assoc(_)], var_table(), lint_state(), fun()) -> {var_table(), lint_state()}.
 map_fields([{Tag,_,K,V}|Fs], Vt, St, F) when Tag =:= map_field_assoc;
                                              Tag =:= map_field_exact ->
     {Pvt,St2} = F([K,V], Vt, St),
@@ -3005,6 +3316,7 @@ map_fields([], _, St, _) ->
 %% warn_invalid_record(Anno, Record, State0) -> State
 %% Adds warning if the record is invalid.
 
+-spec warn_invalid_record(anno(), erl_parse:abstract_expr(), lint_state()) -> lint_state().
 warn_invalid_record(Anno, R, St) ->
     case is_valid_record(R) of
         true -> St;
@@ -3013,6 +3325,7 @@ warn_invalid_record(Anno, R, St) ->
 
 %% is_valid_record(Record) -> boolean().
 
+-spec is_valid_record(erl_parse:abstract_expr()) -> boolean().
 is_valid_record(Rec) ->
     case Rec of
         {char, _, _} -> false;
@@ -3032,6 +3345,7 @@ is_valid_record(Rec) ->
 %% warn_invalid_call(Anno, Call, State0) -> State
 %% Adds warning if the call is invalid.
 
+-spec warn_invalid_call(anno(), erl_parse:abstract_expr() | erl_parse:af_remote_function(), lint_state()) -> lint_state().
 warn_invalid_call(Anno, F, St) ->
     case is_valid_call(F) of
         true -> St;
@@ -3040,6 +3354,7 @@ warn_invalid_call(Anno, F, St) ->
 
 %% is_valid_call(Call) -> boolean().
 
+-spec is_valid_call(erl_parse:abstract_expr() | erl_parse:af_remote_function()) -> boolean().
 is_valid_call(Call) ->
     case Call of
         {char, _, _} -> false;
@@ -3056,6 +3371,7 @@ is_valid_call(Call) ->
 
 %% Raises a warning if we're remote-calling an unexported function (or
 %% referencing it with `fun M:F/A`), as this is likely to be unintentional.
+-spec check_remote_self_call(anno(), module(), atom(), arity(), lint_state()) -> lint_state().
 check_remote_self_call(Anno, M, F, A,
                        #lint{module=M,
                              compile=Opts,
@@ -3079,6 +3395,12 @@ check_remote_self_call(_Anno, _M, _F, _A, St) ->
 %%  Add a record definition if it does not already exist. Normalise
 %%  so that all fields have explicit initial value.
 
+-spec record_def(
+    anno(),
+    erl_parse:record_name(),
+    [erl_parse:af_field_decl()],
+    lint_state()
+) -> lint_state().
 record_def(Anno, Name, Fs0, St0) ->
     case is_map_key(Name, St0#lint.records) of
         true -> add_error(Anno, {redefine_record,Name}, St0);
@@ -3091,10 +3413,14 @@ record_def(Anno, Name, Fs0, St0) ->
             check_type({type, nowarn(), product, Types}, St3)
     end.
 
-%% def_fields([RecDef], RecordName, State) -> {[DefField],State}.
 %%  Check (normalised) fields for duplicates.  Return unduplicated
 %%  record and set State.
 
+-spec def_fields(
+    [erl_parse:af_field_decl()],
+    erl_parse:record_name(),
+    lint_state()
+) -> {[erl_parse:af_field_decl()], lint_state()}.
 def_fields(Fs0, Name, St0) ->
     foldl(fun ({record_field,Af,{atom,Aa,F},V}, {Fs,St}) ->
                   case exist_field(F, Fs) of
@@ -3123,6 +3449,7 @@ def_fields(Fs0, Name, St0) ->
 %%  none has been given then use 'undefined'.
 %%  Also, strip type information from typed record fields.
 
+-spec normalise_fields([erl_parse:af_field_decl()]) -> [erl_parse:af_field_decl()].
 normalise_fields(Fs) ->
     map(fun ({record_field,Af,Field}) ->
 		{record_field,Af,Field,{atom,Af,undefined}};
@@ -3135,6 +3462,7 @@ normalise_fields(Fs) ->
 %% exist_record(Anno, RecordName, State) -> State.
 %%  Check if a record exists.  Set State.
 
+-spec exist_record(anno(), atom(), lint_state()) -> lint_state().
 exist_record(Anno, Name, St) ->
     case is_map_key(Name, St#lint.records) of
         true -> used_record(Name, St);
@@ -3157,6 +3485,7 @@ exist_record(Anno, Name, St) ->
 %%  and must return
 %%      {UpdatedVarTable,State}
 
+-spec check_record(anno(), erl_parse:record_name(), lint_state(), fun()) -> {var_table(), lint_state()}.
 check_record(Anno, Name, St, CheckFun) ->
     case maps:find(Name, St#lint.records) of
         {ok,{_Anno,Fields}} -> CheckFun(Fields, used_record(Name, St));
@@ -3168,6 +3497,7 @@ check_record(Anno, Name, St, CheckFun) ->
             end
     end.
 
+-spec used_record(erl_parse:record_name(), lint_state()) -> lint_state().
 used_record(Name, #lint{usage=Usage}=St) ->
     UsedRecs = gb_sets:add_element(Name, Usage#usage.used_records),
     St#lint{usage = Usage#usage{used_records=UsedRecs}}.
@@ -3177,6 +3507,14 @@ used_record(Name, #lint{usage=Usage}=St) ->
 %% check_fields([ChkField], RecordName, [RecDefField], VarTable, State, CheckFun) ->
 %%      {UpdVarTable,State}.
 
+-spec check_fields(
+    [erl_parse:af_record_field(erl_parse:abstract_expr())],
+    erl_parse:record_name(),
+    [erl_parse:af_field_decl()],
+    var_table(),
+    lint_state(),
+    fun()
+) -> {var_table(), lint_state()}.
 check_fields(Fs, Name, Fields, Vt0, St0, CheckFun) ->
     {_SeenFields,Uvt,St1} =
         foldl(fun (Field, {Sfsa,Vta,Sta}) ->
@@ -3187,6 +3525,15 @@ check_fields(Fs, Name, Fields, Vt0, St0, CheckFun) ->
               end, {[],[], St0}, Fs),
     {Uvt,St1}.
 
+-spec check_field(
+    erl_parse:af_record_field(erl_parse:abstract_expr()) | dynamic(),
+    erl_parse:record_name(),
+    [erl_parse:af_field_decl()],
+    var_table(),
+    lint_state(),
+    [atom()],
+    fun()
+) -> {[atom()], {var_table(), lint_state()}} | {[atom()], {var_table(), var_table(), lint_state()}}.
 check_field({record_field,Af,{atom,Aa,F},Val}, Name, Fields,
             Vt, St, Sfs, CheckFun) ->
     case member(F, Sfs) of
@@ -3217,6 +3564,12 @@ check_field({record_field,_Af,{var,Aa,V},_Val}, Name, _Fields,
 %%      {UpdVarTable,State}.
 %%  Test if record RecordName has field Field. Set State.
 
+-spec pattern_field(
+    erl_parse:af_field_name(),
+    erl_parse:record_name(),
+    [erl_parse:af_field_decl()],
+    lint_state()
+) -> {[], lint_state()}.
 pattern_field({atom,Aa,F}, Name, Fields, St) ->
     case find_field(F, Fields) of
         {ok,_I} -> {[],St};
@@ -3232,6 +3585,14 @@ pattern_field({atom,Aa,F}, Name, Fields, St) ->
 %%                VarTable,Old,State) ->
 %%      {UpdVarTable,NewVars,State}.
 
+-spec pattern_fields(
+    [erl_parse:af_record_field(erl_parse:af_pattern())],
+    erl_parse:record_name(),
+    [erl_parse:af_field_decl()],
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 pattern_fields(Fs, Name, Fields, Vt0, Old, St0) ->
     CheckFun = fun (Val, Vt, St) -> pattern(Val, Vt, Old, St) end,
     {_SeenFields,Uvt,Unew,St1} =
@@ -3253,6 +3614,12 @@ pattern_fields(Fs, Name, Fields, Vt0, Old, St0) ->
 %%      {UpdVarTable,State}.
 %%  Test if record RecordName has field Field. Set State.
 
+-spec record_field(
+    erl_parse:af_field_name(),
+    erl_parse:record_name(),
+    [erl_parse:af_field_decl()],
+    lint_state()
+) -> {[], lint_state()}.
 record_field({atom,Aa,F}, Name, Fields, St) ->
     case find_field(F, Fields) of
         {ok,_I} -> {[],St};
@@ -3276,12 +3643,28 @@ record_field({atom,Aa,F}, Name, Fields, St) ->
 %%  record definitions were checked. Usage of records, imports, and
 %%  functions is collected.
 
+-spec init_fields(
+    [erl_parse:af_record_field(erl_parse:abstract_expr())],
+    anno(),
+    erl_parse:record_name(),
+    [erl_parse:af_field_decl()],
+    var_table(),
+    lint_state()
+) -> {var_table(), lint_state()}.
 init_fields(Ifs, Anno, Name, Dfs, Vt0, St0) ->
     {Vt1,St1} = check_fields(Ifs, Name, Dfs, Vt0, St0, fun expr/3),
     Defs = init_fields(Ifs, Anno, Dfs),
     {_,St2} = check_fields(Defs, Name, Dfs, Vt1, St1, fun expr/3),
     {Vt1,St1#lint{usage = St2#lint.usage}}.
 
+-spec ginit_fields(
+    [erl_parse:af_record_field(erl_parse:af_guard_test())],
+    anno(),
+    erl_parse:record_name(),
+    [erl_parse:af_field_decl()],
+    var_table(),
+    lint_state()
+) -> {var_table(), lint_state()}.
 ginit_fields(Ifs, Anno, Name, Dfs, Vt0, St0) ->
     {Vt1,St1} = check_fields(Ifs, Name, Dfs, Vt0, St0, fun gexpr/3),
     Defs = init_fields(Ifs, Anno, Dfs),
@@ -3292,6 +3675,11 @@ ginit_fields(Ifs, Anno, Name, Dfs, Vt0, St0) ->
     {Vt1,St4}.
 
 %% Default initializations to be carried out
+-spec init_fields(
+    [erl_parse:af_record_field(erl_parse:af_guard_test())],
+    anno(),
+    [erl_parse:af_field_decl()]
+) -> [erl_parse:af_record_field(erl_parse:abstract_expr())].
 init_fields(Ifs, Anno, Dfs) ->
     [ {record_field,Af,{atom,Aa,F},copy_expr(Di, Anno)} ||
         {record_field,Af,{atom,Aa,F},Di} <- Dfs,
@@ -3300,12 +3688,20 @@ init_fields(Ifs, Anno, Dfs) ->
 %% update_fields(UpdFields, RecordName, RecDefFields, VarTable, State) ->
 %%      {UpdVarTable,State}
 
+-spec update_fields(
+    [erl_parse:af_record_field(erl_parse:abstract_expr())],
+    erl_parse:record_name(),
+    [erl_parse:af_field_decl()],
+    var_table(),
+    lint_state()
+) -> {var_table(), lint_state()}.
 update_fields(Ufs, Name, Dfs, Vt, St) ->
     check_fields(Ufs, Name, Dfs, Vt, St, fun expr/3).
 
 %% exist_field(FieldName, [Field]) -> boolean().
 %%  Find a record field in a field list.
 
+-spec exist_field(atom(), [erl_parse:af_record_field(_)]) -> boolean().
 exist_field(F, [{record_field,_Af,{atom,_Aa,F},_Val}|_Fs]) -> true;
 exist_field(F, [_|Fs]) -> exist_field(F, Fs);
 exist_field(_F, []) -> false.
@@ -3313,6 +3709,7 @@ exist_field(_F, []) -> false.
 %% find_field(FieldName, [Field]) -> {ok,Val} | error.
 %%  Find a record field in a field list.
 
+-spec find_field(atom(), [erl_parse:af_field_decl()]) -> {ok, erl_parse:abstract_expr()} | error.
 find_field(F, [{record_field,_Af,{atom,_Aa,F},Val}|_Fs]) -> {ok,Val};
 find_field(F, [_|Fs]) -> find_field(F, Fs);
 find_field(_F, []) -> error.
@@ -3323,6 +3720,14 @@ find_field(_F, []) -> error.
 
 -dialyzer({no_match, type_def/6}).
 
+-spec type_def(
+    type | opaque | nominal,
+    anno(),
+    atom(),
+    erl_parse:abstract_type(),
+    [erl_parse:af_variable()],
+    lint_state()
+) -> lint_state().
 type_def(Attr, Anno, TypeName, ProtoType, Args, St0) ->
     TypeDefs = St0#lint.types,
     Arity = length(Args),
@@ -3356,6 +3761,7 @@ type_def(Attr, Anno, TypeName, ProtoType, Args, St0) ->
 	    end
     end.
 
+-spec warn_redefined_builtin_type(anno(), ta(), lint_state()) -> lint_state().
 warn_redefined_builtin_type(Anno, TypePair, #lint{compile=Opts}=St) ->
     case is_warn_enabled(redefined_builtin_type, St) of
         true ->
@@ -3373,6 +3779,9 @@ warn_redefined_builtin_type(Anno, TypePair, #lint{compile=Opts}=St) ->
             St
     end.
 
+-type seen_type_vars() :: #{atom() => seen_once | seen_once_union | {seen_once, anno()} | seen_multiple}.
+
+-spec check_type({type, anno(), product, [erl_parse:abstract_type()]}, lint_state()) -> lint_state().
 check_type(Types, St) ->
     {SeenVars, St1} = check_type_1(Types, maps:new(), St),
     maps:fold(fun(Var, {SeenOnce, Anno}, AccSt)
@@ -3386,6 +3795,7 @@ check_type(Types, St) ->
                       AccSt
               end, St1, SeenVars).
 
+-spec check_type_1(erl_parse:abstract_type(), seen_type_vars(), lint_state()) -> {seen_type_vars(), lint_state()}.
 check_type_1({type, Anno, TypeName, Args}=Type, SeenVars, #lint{types=Types}=St) ->
     TypePair = {TypeName,
                 if
@@ -3401,6 +3811,11 @@ check_type_1({type, Anno, TypeName, Args}=Type, SeenVars, #lint{types=Types}=St)
 check_type_1(Types, SeenVars, St) ->
     check_type_2(Types, SeenVars, St).
 
+-spec check_type_2(
+    erl_parse:abstract_type() | {type, anno(), product, [erl_parse:abstract_type()]},
+    seen_type_vars(),
+    lint_state()
+) -> {seen_type_vars(), lint_state()}.
 check_type_2({ann_type, _A, [_Var, Type]}, SeenVars, St) ->
     check_type_1(Type, SeenVars, St);
 check_type_2({remote_type, A, [{atom, _, Mod}, {atom, _, Name}, Args]},
@@ -3540,6 +3955,13 @@ check_type_2(I, SeenVars, St) ->
             {SeenVars, add_error(element(2, I), {type_syntax, integer}, St)}
     end.
 
+-spec check_record_types(
+    anno(),
+    atom(),
+    [erl_parse:abstract_type()],
+    seen_type_vars(),
+    lint_state()
+) -> {seen_type_vars(), lint_state()}.
 check_record_types(Anno, Name, Fields, SeenVars, St) ->
     case maps:find(Name, St#lint.records) of
         {ok,{_A,DefFields}} ->
@@ -3559,6 +3981,14 @@ check_record_types(Anno, Name, Fields, SeenVars, St) ->
             end
     end.
 
+-spec check_record_types(
+    [erl_parse:abstract_type() | erl_parse:af_record_field_type()],
+    atom(),
+    [erl_parse:af_field_decl()],
+    seen_type_vars(),
+    lint_state(),
+    ordsets:ordset(atom())
+) -> {seen_type_vars(), lint_state()}.
 check_record_types([{type, _, field_type, [{atom, Anno, FName}, Type]}|Left],
 		   Name, DefFields, SeenVars, St, SeenFields) ->
     %% Check that the field name is valid
@@ -3583,6 +4013,7 @@ check_record_types([{type, _, field_type, [{atom, Anno, FName}, Type]}|Left],
 check_record_types([], _Name, _DefFields, SeenVars, St, _SeenFields) ->
     {SeenVars, St}.
 
+-spec used_type(ta(), anno(), lint_state()) -> lint_state().
 used_type(TypePair, Anno, #lint{usage = Usage, file = File} = St) ->
     Used = Usage#usage.used_types,
     UsedType = #used_type{anno = erl_anno:set_file(File, Anno),
@@ -3590,12 +4021,15 @@ used_type(TypePair, Anno, #lint{usage = Usage, file = File} = St) ->
     NewUsed = maps_prepend(TypePair, UsedType, Used),
     St#lint{usage=Usage#usage{used_types=NewUsed}}.
 
+-spec is_default_type(fa()) -> boolean().
 is_default_type({Name, NumberOfTypeVariables}) ->
     erl_internal:is_type(Name, NumberOfTypeVariables).
 
+-spec is_obsolete_builtin_type(fa()) -> boolean().
 is_obsolete_builtin_type(TypePair) ->
     obsolete_builtin_type(TypePair) =/= no.
 
+-spec obsolete_builtin_type(fa() | {integer(), integer()}) -> no | dynamic().
 %% To keep Dialyzer silent...
 obsolete_builtin_type({1, 255}) ->
     {deprecated, {2, 255}, ""};
@@ -3603,6 +4037,12 @@ obsolete_builtin_type({Name, A}) when is_atom(Name), is_integer(A) -> no.
 
 %% spec_decl(Anno, Fun, Types, State) -> State.
 
+-spec spec_decl(
+    anno(),
+    {atom(), erl_parse:function_name(), arity()} | {erl_parse:function_name(), arity()},
+    erl_parse:af_function_type_list(),
+    lint_state()
+) -> lint_state().
 spec_decl(Anno, MFA0, TypeSpecs, #lint{specs = Specs, module = Mod} = St0) ->
     MFA = case MFA0 of
 	      {F, Arity} -> {Mod, F, Arity};
@@ -3630,6 +4070,12 @@ spec_decl(Anno, MFA0, TypeSpecs, #lint{specs = Specs, module = Mod} = St0) ->
 
 %% callback_decl(Anno, Fun, Types, State) -> State.
 
+-spec callback_decl(
+    anno(),
+    {erl_parse:function_name(), arity()},
+    erl_parse:af_function_type_list(),
+    lint_state()
+) -> lint_state().
 callback_decl(Anno, MFA0, TypeSpecs,
 	      St0 = #lint{callbacks = Callbacks, module = Mod}) ->
     case MFA0 of
@@ -3649,6 +4095,7 @@ callback_decl(Anno, MFA0, TypeSpecs,
 
 %% optional_callbacks(Anno, FAs, State) -> State.
 
+-spec optional_callbacks(anno(), dynamic(), lint_state()) -> lint_state().
 optional_callbacks(Anno, Term, St0) ->
     try true = is_fa_list(Term), Term of
         FAs ->
@@ -3658,6 +4105,7 @@ optional_callbacks(Anno, Term, St0) ->
             St0 % ignore others
     end.
 
+-spec optional_cbs(anno(), [fa()], lint_state()) -> lint_state().
 optional_cbs(_Anno, [], St) ->
     St;
 optional_cbs(Anno, [{F,A}|FAs], St0) ->
@@ -3672,14 +4120,17 @@ optional_cbs(Anno, [{F,A}|FAs], St0) ->
           end,
     optional_cbs(Anno, FAs, St2).
 
+-spec is_fa_list(term()) -> boolean().
 is_fa_list([E|L]) -> is_fa(E) andalso is_fa_list(L);
 is_fa_list([]) -> true;
 is_fa_list(_) -> false.
 
+-spec is_fa(term()) -> boolean().
 is_fa({FuncName, Arity})
   when is_atom(FuncName), is_integer(Arity), Arity >= 0 -> true;
 is_fa(_) -> false.
 
+-spec check_module_name(module(), anno(), lint_state()) -> lint_state().
 check_module_name(M, Anno, St0) ->
     AllChars = atom_to_list(M),
     VisibleChars = remove_non_visible(AllChars),
@@ -3705,18 +4156,21 @@ check_module_name(M, Anno, St0) ->
             end
     end.
 
+-spec remove_non_visible(string()) -> string().
 remove_non_visible(Cs) ->
     SP = $\s,                                   %Plain space.
     NBSP = 16#A0,                               %Non-breaking space.
     SHY = 16#AD,                                %Soft hyphen.
     [C || C <- Cs, C =/= SP, C =/= NBSP, C =/= SHY].
 
+-spec any_control_characters(string()) -> boolean().
 any_control_characters(Cs) ->
     any(fun(C) when is_integer(C), 0 =< C, C < 16#20;
                     is_integer(C), 16#7F =< C, C < 16#A0 -> true;
            (_) -> false
         end, Cs).
 
+-spec check_specs(erl_parse:af_function_type_list(), atom(), arity(), lint_state()) -> lint_state().
 check_specs([FunType|Left], ETag, Arity, St0) ->
     {FunType1, CTypes} =
 	case FunType of
@@ -3737,11 +4191,13 @@ check_specs([FunType|Left], ETag, Arity, St0) ->
 check_specs([], _ETag, _Arity, St) ->
     St.
 
+-spec nowarn() -> anno().
 nowarn() ->
     A0 = erl_anno:new(0),
     A1 = erl_anno:set_generated(true, A0),
     erl_anno:set_file("", A1).
 
+-spec check_specs_without_function(lint_state()) -> lint_state().
 check_specs_without_function(#lint{module=Mod,defined=Funcs,specs=Specs}=St) ->
     Fun = fun({M, F, A}, Anno, AccSt) when M =:= Mod ->
                   FA = {F, A},
@@ -3755,6 +4211,10 @@ check_specs_without_function(#lint{module=Mod,defined=Funcs,specs=Specs}=St) ->
 
 %% This generates warnings for functions without specs; if the user has
 %% specified both options, we do not generate the same warnings twice.
+-spec check_functions_without_spec(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_functions_without_spec(Forms, St0) ->
     case is_warn_enabled(missing_spec_all, St0) of
 	true ->
@@ -3773,6 +4233,11 @@ check_functions_without_spec(Forms, St0) ->
             end
     end.
 
+-spec add_missing_spec_warnings(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state(),
+    atom()
+) -> lint_state().
 add_missing_spec_warnings(Forms, St0, Type) ->
     Specs = [{F,A} || {_M,F,A} <- maps:keys(St0#lint.specs)],
     Warns = %% functions + line numbers for which we should warn
@@ -3796,12 +4261,20 @@ add_missing_spec_warnings(Forms, St0, Type) ->
 		  add_warning(Anno, {missing_spec,FA}, St)
 	  end, St0, Warns).
 
+-spec check_unused_types(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_unused_types(Forms, St) ->
     case is_warn_enabled(unused_type, St) of
         true -> check_unused_types_1(Forms, St);
         false -> St
     end.
 
+-spec check_unused_types_1(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_unused_types_1(Forms, #lint{types=Ts}=St) ->
     case [File || {attribute,_A,file,{File,_Anno}} <- Forms] of
 	[FirstFile|_] ->
@@ -3829,6 +4302,7 @@ check_unused_types_1(Forms, #lint{types=Ts}=St) ->
 	    St
     end.
 
+-spec reached_types(lint_state()) -> [ta()].
 reached_types(#lint{usage = Usage}) ->
     Es = [{From, {type, To}} ||
              To := UsedTs <- Usage#usage.used_types,
@@ -3839,9 +4313,11 @@ reached_types(#lint{usage = Usage}) ->
     true = digraph:delete(G),
     [T || {type, T} <- R].
 
+-spec initially_reached_types([{type_id(), {type, ta()}}]) -> [type_id()].
 initially_reached_types(Es) ->
     [FromTypeId || {{T, _}=FromTypeId, _} <- Es, T =/= type].
 
+-spec check_local_opaque_types(lint_state()) -> lint_state().
 check_local_opaque_types(St) ->
     #lint{types=Ts, exp_types=ExpTs} = St,
     FoldFun =
@@ -3859,6 +4335,10 @@ check_local_opaque_types(St) ->
         end,
     maps:fold(FoldFun, St, Ts).
 
+-spec check_dialyzer_attribute(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    lint_state()
+) -> lint_state().
 check_dialyzer_attribute(Forms, St0) ->
     Vals = [{Anno,V} ||
                {attribute,Anno,dialyzer,Val} <- Forms,
@@ -3903,10 +4383,12 @@ check_dialyzer_attribute(Forms, St0) ->
           end,
     foldl(Fun, St1, Wellformed).
 
+-spec is_function_dialyzer_option(atom()) -> boolean().
 is_function_dialyzer_option(nowarn_function) -> true;
 is_function_dialyzer_option(Option) ->
     is_module_dialyzer_option(Option).
 
+-spec is_module_dialyzer_option(atom()) -> boolean().
 is_module_dialyzer_option(Option) ->
     lists:member(Option,
                  [no_return,no_unused,no_improper_lists,no_fun_app,
@@ -3922,6 +4404,14 @@ is_module_dialyzer_option(Option) ->
 %% try_catch_clauses(Scs, Ccs, In, ImportVarTable, State) ->
 %%      {UpdVt,State}.
 
+-spec try_clauses(
+    [erl_parse:af_clause()],
+    [erl_parse:af_clause()],
+    {'try', anno()},
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {var_table(), lint_state()}.
 try_clauses(Scs, Ccs, In, Vt, Uvt, St0) ->
     {Csvt0,St1} = icrt_clauses(Scs, Vt, St0),
     {Csvt1,St2} = catch_clauses(Ccs, vtupdate(Uvt, Vt), St1),
@@ -3932,6 +4422,7 @@ try_clauses(Scs, Ccs, In, Vt, Uvt, St0) ->
 %% icrt_clauses(Clauses, In, ImportVarTable, State) ->
 %%      {UpdVt,State}.
 
+-spec icrt_clauses([erl_parse:af_clause()], {atom(), anno()}, var_table(), lint_state()) -> {var_table(), lint_state()}.
 icrt_clauses(Cs, In, Vt, St0) ->
     {Csvt,St1} = icrt_clauses(Cs, Vt, St0),
     UpdVt = icrt_export(Csvt, Vt, In, St1),
@@ -3940,9 +4431,11 @@ icrt_clauses(Cs, In, Vt, St0) ->
 %% icrt_clauses(Clauses, ImportVarTable, State) ->
 %%      {NewVts,State}.
 
+-spec icrt_clauses([erl_parse:af_clause()], var_table(), lint_state()) -> {[var_table()], lint_state()}.
 icrt_clauses(Cs, Vt, St) ->
     mapfoldl(fun (C, St0) -> icrt_clause(C, Vt, St0) end, St, Cs).
 
+-spec icrt_clause(erl_parse:af_clause(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 icrt_clause({clause,_Anno,H,G,B}, Vt0, St0) ->
     {Hvt,Hnew,St1} = head(H, Vt0, St0),
     Vt1 = vtupdate(Hvt, Hnew),
@@ -3951,9 +4444,11 @@ icrt_clause({clause,_Anno,H,G,B}, Vt0, St0) ->
     {Bvt,St3} = exprs(B, vtupdate(Vt2, Vt0), St2),
     {vtupdate(Bvt, Vt2),St3}.
 
+-spec catch_clauses([erl_parse:af_clause()], var_table(), lint_state()) -> {[var_table()], lint_state()}.
 catch_clauses(Cs, Vt, St) ->
     mapfoldl(fun(C, St0) -> catch_clause(C, Vt, St0) end, St, Cs).
 
+-spec catch_clause(erl_parse:af_clause(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 catch_clause({clause,_Anno,H,G,B}, Vt0, St0) ->
     [{tuple,_,[_,_,Stack]}] = H,
     {Hvt,Hnew,St1} = head(H, Vt0, St0),
@@ -3965,6 +4460,7 @@ catch_clause({clause,_Anno,H,G,B}, Vt0, St0) ->
     {Bvt,St4} = exprs(B, vtupdate(Vt2, Vt0), St3),
     {vtupdate(Bvt, Vt2),St4}.
 
+-spec taint_stack_var(erl_parse:af_pattern(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 taint_stack_var({var,Anno,V}, Vt, St) when V =/= '_' ->
     St1 = case orddict:find(V, Vt) of
               {ok,{_,used,_}} ->
@@ -3979,10 +4475,12 @@ taint_stack_var({var,Anno,V}, Vt, St) when V =/= '_' ->
 taint_stack_var(_, Vt, St) ->
     {Vt, St}.
 
+-spec icrt_export([var_table()], var_table(), {atom(), anno()}, lint_state()) -> var_table().
 icrt_export(Vts, Vt, {Tag,Attrs}, St) ->
     {_File,Loc} = loc(Attrs, St),
     icrt_export(lists:merge(Vts), Vt, {Tag,Loc}, length(Vts), []).
 
+-spec icrt_export(var_table(), var_table(), {atom(), erl_anno:location()}, integer(), var_table()) -> var_table().
 icrt_export([{V,{{export,_},_,_}}|Vs0], [{V,{{export,_}=S0,_,As}}|Vt],
             In, I, Acc) ->
     %% V was an exported variable and has been used in an expression in at least
@@ -4041,6 +4539,12 @@ icrt_export([{V,_}|_]=Vs0, Vt, In, I, Acc) ->
 icrt_export([], _, _, _, Acc) ->
     reverse(Acc).
 
+-spec handle_comprehension(
+    erl_parse:abstract_expr() | erl_parse:af_assoc(erl_parse:abstract_expr()),
+    erl_parse:af_qualifier_seq(),
+    var_table(),
+    lint_state()
+) -> {var_table(), lint_state()}.
 handle_comprehension(E, Qs, Vt0, St0) ->
     {Vt1, Uvt, St1} = lc_quals(Qs, Vt0, St0),
     {Evt,St2} = comprehension_expr(E, Vt1, St1),
@@ -4060,6 +4564,11 @@ handle_comprehension(E, Qs, Vt0, St0) ->
     Vt = vt_no_unsafe(vt_no_unused(Vt4)),
     {Vt, St}.
 
+-spec comprehension_expr(
+    erl_parse:abstract_expr() | erl_parse:af_assoc(erl_parse:abstract_expr()),
+    var_table(),
+    lint_state()
+) -> {var_table(), lint_state()}.
 comprehension_expr({map_field_assoc,_,K,V}, Vt0, St0) ->
     expr_list([K,V], Vt0, St0);
 comprehension_expr(E, Vt, St) ->
@@ -4076,11 +4585,13 @@ comprehension_expr(E, Vt, St) ->
 %%  shadowed variables that are not included in ImportVarTable are included
 %%  in ShadowVarTable (these are local variables that are not global variables).
 
+-spec lc_quals(erl_parse:af_qualifier_seq(), var_table(), lint_state()) -> {var_table(), var_table(), lint_state()}.
 lc_quals(Qs, Vt0, St0) ->
     OldRecDef = St0#lint.recdef_top,
     {Vt,Uvt,St} = lc_quals(Qs, Vt0, [], St0#lint{recdef_top = false}),
     {Vt,Uvt,St#lint{recdef_top = OldRecDef}}.
 
+-spec lc_quals([erl_parse:af_qualifier()], var_table(), var_table(), lint_state()) -> {var_table(), var_table(), lint_state()}.
 lc_quals([{zip,_Anno,Gens0} | Qs], Vt0, Uvt0, St0) ->
     {Gens1, St1} = filter_generators(Gens0, [], St0),
     {Vt,Uvt,St2} = case Gens1 of
@@ -4121,12 +4632,16 @@ lc_quals([F|Qs], Vt, Uvt, St0) ->
 lc_quals([], Vt, Uvt, St) ->
     {Vt, Uvt, St}.
 
+-spec is_guard_test2_info(lint_state()) -> {#{atom() => {anno(), [erl_parse:af_field_decl()]}}, fun()}.
 is_guard_test2_info(#lint{records=RDs,locals=Locals,imports=Imports}) ->
     {RDs,fun(FA) ->
 		 is_local_function(Locals, FA) orelse
 		     is_imported_function(Imports, FA)
 	 end}.
 
+-spec filter_generators(
+    [erl_parse:af_generator()], [erl_parse:af_generator()], lint_state()
+) -> {[erl_parse:af_generator()], lint_state()}.
 filter_generators([{generate,_,_,_}=Q|Qs], Acc, St) ->
     filter_generators(Qs, [Q|Acc], St);
 filter_generators([{generate_strict,_,_,_}=Q|Qs], Acc, St) ->
@@ -4146,6 +4661,9 @@ filter_generators([Q|Qs], Acc, St0) ->
 filter_generators([], Acc, St) ->
     {reverse(Acc), St}.
 
+-spec handle_generators(
+    [erl_parse:af_generator()], var_table(), var_table(), lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 handle_generators(Gens,Vt,Uvt,St0) ->
     Ps = [P || {_,_,P,_} <- Gens],
     Es = [E || {_,_,_,E} <- Gens],
@@ -4165,6 +4683,9 @@ handle_generators(Gens,Vt,Uvt,St0) ->
     Vt3 = vtupdate(vtsubtract(Vt2, Pnew), Pnew),
     {Vt3,NUvt,St5}.
 
+-spec handle_generator(
+    erl_parse:af_pattern() | erl_parse:af_assoc_exact(erl_parse:af_pattern()), erl_parse:abstract_expr(), var_table(), var_table(), lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 handle_generator(P,E,Vt,Uvt,St0) ->
     {Evt,St1} = expr(E, Vt, St0),
     %% Forget variables local to E immediately.
@@ -4182,6 +4703,12 @@ handle_generator(P,E,Vt,Uvt,St0) ->
     Vt3 = vtupdate(vtsubtract(Vt2, Pnew), Pnew),
     {Vt3,NUvt,St5}.
 
+-spec comprehension_pattern(
+    [erl_parse:af_pattern() | erl_parse:af_assoc_exact(erl_parse:af_pattern())]
+        | erl_parse:af_pattern() | erl_parse:af_assoc_exact(erl_parse:af_pattern()),
+    var_table(),
+    lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 comprehension_pattern([_|_]=Ps, Vt, St) ->
     Mps = [K || {map_field_exact,_,K,_} <- Ps] ++ [V || {map_field_exact,_,_,V} <- Ps],
     Ps1 = [P || P <- Ps, element(1,P)=/=map_field_exact],
@@ -4191,6 +4718,7 @@ comprehension_pattern({map_field_exact,_,K,V}, Vt, St) ->
 comprehension_pattern(P, Vt, St) ->
     pattern(P, Vt, [], St).
 
+-spec handle_bitstring_gen_pat(erl_parse:af_pattern(), lint_state()) -> lint_state().
 handle_bitstring_gen_pat({bin,_,Segments=[_|_]},St) ->
     case lists:last(Segments) of
         {bin_element,Anno,_,default,Flags} when is_list(Flags) ->
@@ -4219,6 +4747,7 @@ handle_bitstring_gen_pat(_,St) ->
 %% vars across functions. This is by erl_eval to compute used vars
 %% without having to traverse the tree multiple times.
 
+-spec fun_clauses([erl_parse:af_clause()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 fun_clauses(Cs, Vt, #lint{fun_used_vars=(#{}=FUV)} = St) ->
     {Uvt, St0} = fun_clauses1(Cs, Vt, St#lint{fun_used_vars=maps:new()}),
     #lint{fun_used_vars=InnerFUV} = St0,
@@ -4228,6 +4757,7 @@ fun_clauses(Cs, Vt, #lint{fun_used_vars=(#{}=FUV)} = St) ->
 fun_clauses(Cs, Vt, St) ->
     fun_clauses1(Cs, Vt, St).
 
+-spec fun_clauses1([erl_parse:af_clause()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 fun_clauses1(Cs, Vt, St) ->
     OldRecDef = St#lint.recdef_top,
     {Bvt,St2} = foldl(fun (C, {Bvt0, St0}) ->
@@ -4237,6 +4767,7 @@ fun_clauses1(Cs, Vt, St) ->
     Uvt = vt_no_unsafe(vt_no_unused(vtold(Bvt, Vt))),
     {Uvt,St2#lint{recdef_top = OldRecDef}}.
 
+-spec fun_clause(erl_parse:af_clause(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 fun_clause({clause,_Anno,H,G,B}, Vt0, St0) ->
     {Hvt,Hnew,St1} = head(H, Vt0, [], St0), % No imported pattern variables
     Vt1 = vtupdate(Hvt, Vt0),
@@ -4294,6 +4825,13 @@ fun_clause({clause,_Anno,H,G,B}, Vt0, St0) ->
 %% once. New shadows Vt here, which is necessary in order to separate
 %% uses of shadowed and shadowing variables. See also pat_binsize_var.
 
+-spec pat_var(
+    atom(),
+    anno(),
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 pat_var(V, Anno, Vt, New, St0) ->
     case orddict:find(V, New) of
         {ok, {bound,_Usage,As}} ->
@@ -4325,6 +4863,7 @@ pat_var(V, Anno, Vt, New, St0) ->
 %% Underscore-prefixed variables merely suppress unused variable warnings, but
 %% are often misunderstood and thought to behave like '_' which can introduce
 %% subtle errors. Warn about this since matching them on purpose is rare.
+-spec warn_underscore_match(atom(), anno(), lint_state()) -> lint_state().
 warn_underscore_match(V, Anno, St) ->
     case {is_warn_enabled(underscore_match, St), atom_to_list(V)} of
         {true, [$_ | _]} ->
@@ -4333,6 +4872,7 @@ warn_underscore_match(V, Anno, St) ->
             St
     end.
 
+-spec warn_underscore_match_pat(atom(), [anno()], lint_state()) -> lint_state().
 warn_underscore_match_pat(V, Annos, St) ->
     case {is_warn_enabled(underscore_match, St), atom_to_list(V)} of
         {true, [$_ | _]} ->
@@ -4341,6 +4881,7 @@ warn_underscore_match_pat(V, Annos, St) ->
             St
     end.
 
+-spec warn_underscore_match_pat_1([anno()], atom(), lint_state()) -> lint_state().
 warn_underscore_match_pat_1([Anno | Annos], V, St0) ->
     St = add_warning(Anno, {match_underscore_var_pat,V}, St0),
     warn_underscore_match_pat_1(Annos, V, St);
@@ -4352,6 +4893,13 @@ warn_underscore_match_pat_1([], _V, St) ->
 %% Special case of pat_var/expr_var for variables in binary size expressions
 %% (never adds variables to NewVars, only marks uses).
 
+-spec pat_binsize_var(
+    atom(),
+    anno(),
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 pat_binsize_var(V, Anno, Vt, New, St) ->
     case orddict:find(V, New) of
         {ok,{bound,_Used,As}} ->
@@ -4389,6 +4937,7 @@ pat_binsize_var(V, Anno, Vt, New, St) ->
 %%  exported vars are probably safe, warn only if warn_export_vars is
 %%  set.
 
+-spec expr_var(atom(), anno(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 expr_var(V, Anno, Vt, #lint{bvt=none}=St) ->
     do_expr_var(V, Anno, Vt, St);
 expr_var(V, Anno, Vt0, #lint{bvt=Bvt0}=St0) when is_list(Bvt0) ->
@@ -4396,6 +4945,7 @@ expr_var(V, Anno, Vt0, #lint{bvt=Bvt0}=St0) when is_list(Bvt0) ->
     {Vt,Bvt,St} = pat_binsize_var(V, Anno, Vt0, Bvt0, St0),
     {Vt,St#lint{bvt=vtmerge(Bvt0, Bvt)}}.
 
+-spec do_expr_var(atom(), anno(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 do_expr_var(V, Anno, Vt, St) ->
     case orddict:find(V, Vt) of
         {ok,{bound,_Usage,As}} ->
@@ -4426,12 +4976,14 @@ do_expr_var(V, Anno, Vt, St) ->
             end
     end.
 
+-spec exported_var(anno(), atom(), term(), lint_state()) -> lint_state().
 exported_var(Anno, V, From, St) ->
     case is_warn_enabled(export_vars, St) of
         true -> add_warning(Anno, {exported_var,V,From}, St);
         false -> St
     end.
 
+-spec shadow_vars(var_table(), var_table(), term(), lint_state()) -> lint_state().
 shadow_vars(Vt, Vt0, In, St0) ->
     case is_warn_enabled(shadow_vars, St0) of
         true ->
@@ -4442,14 +4994,17 @@ shadow_vars(Vt, Vt0, In, St0) ->
         false -> St0
     end.
 
+-spec check_unused_vars(var_table(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 check_unused_vars(Vt, Vt0, St0) ->
     U = unused_vars(Vt, Vt0, St0),
     warn_unused_vars(U, Vt, St0).
 
+-spec check_old_unused_vars(var_table(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 check_old_unused_vars(Vt, Vt0, St0) ->
     U = unused_vars(vtold(Vt, Vt0), [], St0),
     warn_unused_vars(U, Vt, St0).
 
+-spec unused_vars(var_table(), var_table(), lint_state()) -> var_table().
 unused_vars(Vt, Vt0, _St0) ->
     U0 = orddict:filter(fun (V, {_State,unused,_As}) ->
                                 case atom_to_list(V) of
@@ -4460,6 +5015,7 @@ unused_vars(Vt, Vt0, _St0) ->
                         end, Vt),
     vtnew(U0, Vt0). % Only new variables.
 
+-spec warn_unused_vars(var_table(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 warn_unused_vars([], Vt, St0) ->
     {Vt,St0};
 warn_unused_vars(U, Vt, St0) ->
@@ -4482,6 +5038,7 @@ warn_unused_vars(U, Vt, St0) ->
 %%  will be updated with their property in UpdVarTable. The state of
 %%  the variables in UpdVarTable will be returned.
 
+-spec vtupdate(var_table(), var_table()) -> var_table().
 vtupdate(Uvt, Vt0) ->
     orddict:merge(fun (_V, {S,U1,A1}, {_S,U2,A2}) ->
                           {S, merge_used(U1, U2), merge_annos(A1, A2)}
@@ -4490,6 +5047,7 @@ vtupdate(Uvt, Vt0) ->
 %% vtunsafe(From, UpdVarTable, VarTable) -> UnsafeVarTable.
 %%  Return all new variables in UpdVarTable as unsafe.
 
+-spec vtunsafe({atom(), anno()}, var_table(), var_table()) -> var_table().
 vtunsafe({Tag,Anno}, Uvt, Vt) ->
     Location = erl_anno:location(Anno),
     [{V,{{unsafe,{Tag,Location}},U,As}} || {V,{_,U,As}} <- vtnew(Uvt, Vt)].
@@ -4498,6 +5056,7 @@ vtunsafe({Tag,Anno}, Uvt, Vt) ->
 %%  Merge two variables tables generating a new vartable. Give priority to
 %%  errors then warnings.
 
+-spec vtmerge(var_table(), var_table()) -> var_table().
 vtmerge(Vt1, Vt2) ->
     orddict:merge(fun (_V, {S1,U1,A1}, {S2,U2,A2}) ->
                           {merge_state(S1, S2),
@@ -4505,6 +5064,7 @@ vtmerge(Vt1, Vt2) ->
                            merge_annos(A1, A2)}
                   end, Vt1, Vt2).
 
+-spec vtmerge([var_table()]) -> var_table().
 vtmerge(Vts) -> foldl(fun (Vt, Mvts) -> vtmerge(Vt, Mvts) end, [], Vts).
 
 %% This is similar to vtmerge/2 but marks repeated variables as 'used' because
@@ -4513,6 +5073,7 @@ vtmerge(Vts) -> foldl(fun (Vt, Mvts) -> vtmerge(Vt, Mvts) end, [], Vts).
 %% variables:
 %%
 %% f(_Same, _Same) -> ok. %% Should raise a warning
+-spec vtmerge_pat(var_table(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 vtmerge_pat(VtA, VtB, St0) ->
     Vt0 = orddict:merge(fun(_V, {S1, Usage1, Annos1}, {S2, Usage2, Annos2}) ->
                                 Annos = merge_annos(Annos1, Annos2),
@@ -4535,9 +5096,11 @@ vtmerge_pat(VtA, VtB, St0) ->
                           {Var, St}
                    end, St0, Vt0).
 
+-spec merge_annos([anno()], [anno()]) -> [anno()].
 merge_annos(As1, As2) ->
     ordsets:union(As1,As2).
 
+-spec merge_state(var_state(), var_state()) -> var_state().
 merge_state({unsafe,_F1}=S1, _S2) -> S1;          %Take the error case
 merge_state(_S1, {unsafe,_F2}=S2) -> S2;
 merge_state(bound, S2) -> S2;                   %Take the warning
@@ -4546,6 +5109,7 @@ merge_state({export,F1},{export,_F2}) ->        %Sanity check
     %% We want to report the outermost construct
     {export,F1}.
 
+-spec merge_used(V, V) -> V when V :: used | unused.
 merge_used(used, _Usage2) -> used;
 merge_used(_Usage1, used) -> used;
 merge_used(unused, unused) -> unused.
@@ -4553,38 +5117,45 @@ merge_used(unused, unused) -> unused.
 %% vtnew(NewVarTable, OldVarTable) -> NewVarTable.
 %%  Return all the truly new variables in NewVarTable.
 
+-spec vtnew(var_table(), var_table()) -> var_table().
 vtnew(New, Old) ->
     orddict:filter(fun (V, _How) -> not orddict:is_key(V, Old) end, New).
 
 %% vtsubtract(VarTable1, VarTable2) -> NewVarTable.
 %%  Return all the variables in VarTable1 which don't occur in VarTable2.
 %%  Same thing as vtnew, but a more intuitive name for some uses.
+-spec vtsubtract(var_table(), var_table()) -> var_table().
 vtsubtract(New, Old) ->
     vtnew(New, Old).
 
 %% vtold(NewVarTable, OldVarTable) -> OldVarTable.
 %%  Return all the truly old variables in NewVarTable.
 
+-spec vtold(var_table(), var_table()) -> var_table().
 vtold(New, Old) ->
     orddict:filter(fun (V, _How) -> orddict:is_key(V, Old) end, New).
 
+-spec vt_no_unsafe(var_table()) -> var_table().
 vt_no_unsafe(Vt) -> [V || {_,{S,_U,_A}}=V <- Vt,
                           case S of
                               {unsafe,_} -> false;
                               _ -> true
                           end].
 
+-spec vt_no_unused(var_table()) -> var_table().
 vt_no_unused(Vt) -> [V || {_,{_,U,_A}}=V <- Vt, U =/= unused].
 
 %% copy_expr(Expr, Anno) -> Expr.
 %%  Make a copy of Expr converting all annotations numbers to Anno.
 
+-spec copy_expr(erl_parse:abstract_expr(), anno()) -> erl_parse:abstract_expr().
 copy_expr(Expr, Anno) ->
     erl_parse:map_anno(fun(_A) -> Anno end, Expr).
 
 %% Check a record_info call. We have already checked that it is not
 %% shadowed by an import.
 
+-spec check_record_info_call(anno(), anno(), [erl_parse:abstract_expr()], lint_state()) -> lint_state().
 check_record_info_call(_Anno,Aa,[{atom,Ai,Info},{atom,_An,Name}],St) ->
     case member(Info, [fields,size]) of
         true -> exist_record(Aa, Name, St);
@@ -4593,6 +5164,7 @@ check_record_info_call(_Anno,Aa,[{atom,Ai,Info},{atom,_An,Name}],St) ->
 check_record_info_call(Anno,_Aa,_As,St) ->
     add_error(Anno, illegal_record_info, St).
 
+-spec has_wildcard_field([erl_parse:af_record_field(_) | dynamic()]) -> no | {yes, anno()}.
 has_wildcard_field([{record_field,_Af,{var,Aa,'_'},_Val}|_Fs]) -> Aa;
 has_wildcard_field([_|Fs]) -> has_wildcard_field(Fs);
 has_wildcard_field([]) -> no.
@@ -4612,12 +5184,14 @@ has_wildcard_field([]) -> no.
 %% We only raise a warning when the expression-to-be-updated is a map or a
 %% record, as better warnings will be raised elsewhere for other funny
 %% constructs.
+-spec warn_if_literal_update(anno(), erl_parse:abstract_expr(), lint_state()) -> lint_state().
 warn_if_literal_update(Anno, Expr, St) ->
     case is_literal_update(Expr) andalso is_warn_enabled(update_literal, St) of
         true -> add_warning(Anno, update_literal, St);
         false -> St
     end.
 
+-spec is_literal_update(erl_parse:abstract_expr()) -> boolean().
 is_literal_update({record, _, Inner, _, _}) ->
     is_literal_update(Inner);
 is_literal_update({record, _, _, _}) ->
@@ -4632,15 +5206,16 @@ is_literal_update(_Expr) ->
 %% check_remote_function(Anno, ModuleName, FuncName, [Arg], State) -> State.
 %%  Perform checks on known remote calls.
 
+-spec check_remote_function(anno(), module(), atom(), [erl_parse:abstract_expr()], lint_state()) -> lint_state().
 check_remote_function(Anno, M, F, As, St0) ->
     St1 = deprecated_function(Anno, M, F, As, St0),
     St2 = check_qlc_hrl(Anno, M, F, As, St1),
     St3 = check_load_nif(Anno, M, F, As, St2),
     format_function(Anno, M, F, As, St3).
 
-%% check_load_nif(Anno, ModName, FuncName, [Arg], State) -> State
 %%  Add warning if erlang:load_nif/2 is called when any kind of inlining has
 %%  been enabled.
+-spec check_load_nif(anno(), module(), atom(), [erl_parse:abstract_expr()], lint_state()) -> lint_state().
 check_load_nif(Anno, erlang, load_nif, [_, _], St0) ->
     St = St0#lint{load_nif = true},
     case is_warn_enabled(nif_inline, St) of
@@ -4650,20 +5225,22 @@ check_load_nif(Anno, erlang, load_nif, [_, _], St0) ->
 check_load_nif(_Anno, _ModName, _FuncName, _Args, St) ->
     St.
 
+-spec check_nif_inline(anno(), lint_state()) -> lint_state().
 check_nif_inline(Anno, St) ->
     case any(fun is_inline_opt/1, St#lint.compile) of
         true -> add_warning(Anno, nif_inline, St);
         false -> St
     end.
 
+-spec is_inline_opt(compile:option()) -> boolean().
 is_inline_opt({inline, [_|_]=_FAs}) -> true;
 is_inline_opt(inline) -> true;
 is_inline_opt(_) -> false.
 
-%% check_qlc_hrl(Anno, ModName, FuncName, [Arg], State) -> State
 %%  Add warning if qlc:q/1,2 has been called but qlc.hrl has not
 %%  been included.
 
+-spec check_qlc_hrl(anno(), module(), atom(), [erl_parse:abstract_expr()], lint_state()) -> lint_state().
 check_qlc_hrl(Anno, M, F, As, St) ->
     Arity = length(As),
     case As of
@@ -4679,6 +5256,7 @@ check_qlc_hrl(Anno, M, F, As, St) ->
 
 -dialyzer({no_match, deprecated_function/5}).
 
+-spec deprecated_function(anno(), module(), atom(), [erl_parse:abstract_expr() | undefined], lint_state()) -> lint_state().
 deprecated_function(Anno, M, F, As, St) ->
     Arity = length(As),
     MFA = {M, F, Arity},
@@ -4707,6 +5285,7 @@ deprecated_function(Anno, M, F, As, St) ->
 	    St
     end.
 
+-spec add_removed_warning(anno(), mfa(), error_description(), lint_state()) -> lint_state().
 add_removed_warning(Anno, {M, _, _}=MFA, Warning, #lint{not_removed=NotRemoved}=St) ->
     case is_warn_enabled(removed, St) andalso
         not gb_sets:is_element(M, NotRemoved) andalso
@@ -4719,6 +5298,7 @@ add_removed_warning(Anno, {M, _, _}=MFA, Warning, #lint{not_removed=NotRemoved}=
 
 -dialyzer({no_match, deprecated_type/5}).
 
+-spec deprecated_type(anno(), module(), atom(), [term()], lint_state()) -> lint_state().
 deprecated_type(Anno, M, N, As, St) ->
     NAs = length(As),
     case otp_internal:obsolete_type(M, N, NAs) of
@@ -4730,6 +5310,7 @@ deprecated_type(Anno, M, N, As, St) ->
             St
     end.
 
+-spec obsolete_guard(erl_parse:af_guard_test(), lint_state()) -> lint_state().
 obsolete_guard({call,Anno,{atom,Ar,F},As}, St0) ->
     Arity = length(As),
     case erl_internal:old_type_test(F, Arity) of
@@ -4742,6 +5323,7 @@ obsolete_guard({call,Anno,{atom,Ar,F},As}, St0) ->
 obsolete_guard(_G, St) ->
     St.
 
+-spec test_overriden_by_local(anno(), atom(), arity(), lint_state()) -> lint_state().
 test_overriden_by_local(Anno, OldTest, Arity, St) ->
     ModernTest = list_to_atom("is_"++atom_to_list(OldTest)),
     case is_local_function(St#lint.locals, {ModernTest, Arity}) of
@@ -4751,6 +5333,7 @@ test_overriden_by_local(Anno, OldTest, Arity, St) ->
 	    St
     end.
 
+-spec feature_keywords() -> #{atom() => [atom()]}.
 feature_keywords() ->
     Features = erl_features:configurable(),
     G = fun(Ftr, Map) ->
@@ -4763,6 +5346,7 @@ feature_keywords() ->
 %% keyword_warning(Anno, Atom, State) -> State.
 %%  Add warning for atoms that will be reserved keywords in the future.
 %%  (Currently, no such keywords to warn for.)
+-spec keyword_warning(anno(), atom() | erl_parse:abstract_expr(), lint_state()) -> lint_state().
 keyword_warning(Anno, Atom, St) ->
     case is_warn_enabled(keywords, St) of
         true ->
@@ -4782,9 +5366,9 @@ keyword_warning(Anno, Atom, St) ->
             St
     end.
 
-%% format_function(Anno, ModName, FuncName, [Arg], State) -> State.
 %%  Add warning for bad calls to io:fwrite/format functions.
 
+-spec format_function(anno(), module(), atom(), [erl_parse:abstract_expr()], lint_state()) -> lint_state().
 format_function(DefAnno, M, F, As, St) ->
     maybe
         true ?= is_format_function(M, F),
@@ -4801,6 +5385,7 @@ format_function(DefAnno, M, F, As, St) ->
         false -> St
     end.
 
+-spec is_format_function(module(), atom()) -> boolean().
 is_format_function(io, fwrite) -> true;
 is_format_function(io, format) -> true;
 is_format_function(io_lib, fwrite) -> true;
@@ -4809,6 +5394,8 @@ is_format_function(M, F) when is_atom(M), is_atom(F) -> false.
 
 %% check_format_1([Arg]) -> ok | {warn,Level,Format,[Arg]}.
 
+-spec check_format_1([erl_parse:abstract_expr() | no_argument_list]) ->
+    ok | {warn, Level, Fmt, Fas} | {warn, Level, anno(), Fmt, Fas} when Level :: integer(), Fmt :: string(), Fas :: [term()].
 check_format_1([Fmt]) ->
     check_format_1([Fmt,no_argument_list]);
 check_format_1([Fmt,As]) ->
@@ -4818,11 +5405,14 @@ check_format_1([_Dev,Fmt,As]) ->
 check_format_1(_As) ->
     {warn,1,"format call with wrong number of arguments",[]}.
 
+-spec canonicalize_string(erl_parse:abstract_expr() | no_argument_list) -> erl_parse:abstract_expr() | no_argument_list.
 canonicalize_string({string,Anno,Cs}) ->
     foldr(fun (C, T) -> {cons,Anno,{integer,Anno,C},T} end, {nil,Anno}, Cs);
 canonicalize_string(Term) ->
     Term.
 
+-spec check_format_2(erl_parse:abstract_expr() | no_argument_list, erl_parse:abstract_expr() | no_argument_list) ->
+    ok | {warn, Level, anno(), Fmt, Fas} when Level :: integer(), Fmt :: string(), Fas :: [term()].
 check_format_2(Fmt, As) ->
     case Fmt of
         {string,A,S} ->
@@ -4834,6 +5424,8 @@ check_format_2(Fmt, As) ->
             {warn,2,Anno,"format string not a textual constant",[]}
     end.
 
+-spec check_format_2a(string(), anno(), erl_parse:abstract_expr() | no_argument_list) ->
+    ok | {warn, Level, anno(), Fmt, Fas} when Level :: integer(), Fmt :: string(), Fas :: [term()].
 check_format_2a(Fmt, FmtAnno, no_argument_list=As) ->
     check_format_3(Fmt, FmtAnno, As);
 check_format_2a(Fmt, FmtAnno, As) ->
@@ -4848,6 +5440,8 @@ check_format_2a(Fmt, FmtAnno, As) ->
             {warn,2,Anno,"format arguments perhaps not a list",[]}
     end.
 
+-spec check_format_3(string(), anno(), erl_parse:abstract_expr() | no_argument_list) ->
+    ok | {warn, Level, anno(), Fmt, Fas} when Level :: integer(), Fmt :: string(), Fas :: [term()].
 check_format_3(Fmt, FmtAnno, As) ->
     case check_format_string(Fmt, true) of
         {ok,Need} ->
@@ -4856,6 +5450,8 @@ check_format_3(Fmt, FmtAnno, As) ->
             {warn,1,FmtAnno,"format string invalid (~ts)",[S]}
     end.
 
+-spec check_format_4([need()], anno(), erl_parse:abstract_expr() | no_argument_list) ->
+    ok | {warn, Level, anno(), Fmt, Fas} when Level :: integer(), Fmt :: string(), Fas :: [term()].
 check_format_4([], _FmtAnno, no_argument_list) ->
     ok;
 check_format_4(Need, FmtAnno, no_argument_list) ->
@@ -4881,11 +5477,13 @@ check_format_4(Need, _FmtAnno, As) ->
             {warn,1,Anno,Msg,[arguments(Needed),arguments(Actual)]}
     end.
 
+-spec arguments(integer()) -> iolist().
 arguments(1) ->
     "1 argument";
 arguments(N) ->
     [integer_to_list(N), " arguments"].
 
+-spec args_list(erl_parse:abstract_expr()) -> boolean() | 'maybe'.
 args_list({cons,_A,_H,T}) -> args_list(T);
 %% Strange case: user has written something like [a | "bcd"]; pretend
 %% we don't know:
@@ -4896,15 +5494,19 @@ args_list({integer,_,_}) -> false;
 args_list({float,_,_}) -> false;
 args_list(_Other) -> 'maybe'.
 
+-spec args_length(erl_parse:abstract_expr()) -> integer().
 args_length({cons,_A,_H,T}) -> 1 + args_length(T);
 args_length({nil,_A}) -> 0.
 
+-type need() :: int | 'fun' | float | string | term.
 
 -doc false.
+-spec check_format_string(io:format()) -> {ok, [need()]} | {error, string()}.
 check_format_string(Fmt) ->
     check_format_string(Fmt, true).
 
 -doc false.
+-spec check_format_string(io:format(), boolean()) -> {ok, [need()]} | {error, string()}.
 check_format_string(Fmt, Strict) when is_atom(Fmt) ->
     check_format_string(atom_to_list(Fmt), Strict);
 check_format_string(Fmt, Strict) when is_binary(Fmt) ->
@@ -4912,6 +5514,7 @@ check_format_string(Fmt, Strict) when is_binary(Fmt) ->
 check_format_string(Fmt, Strict) ->
     extract_sequences(Fmt, [], Strict).
 
+-spec extract_sequences(string(), [need()], boolean()) -> {ok, [need()]} | {error, string()}.
 extract_sequences(Fmt, Need0, Strict) ->
     case string:find(Fmt, [$~]) of
         nomatch -> {ok,lists:reverse(Need0)};         %That's it
@@ -4922,6 +5525,7 @@ extract_sequences(Fmt, Need0, Strict) ->
             end
     end.
 
+-spec extract_sequence(integer(), string(), [need()], boolean()) -> {ok, [need()], string()} | {error, string()}.
 extract_sequence(1, [$-,C|Fmt], Need, Strict)
   when is_integer(C), C >= $0, C =< $9 ->
     extract_sequence_digits(1, Fmt, Need, Strict);
@@ -4972,12 +5576,19 @@ extract_sequence(5, [C|Fmt], Need0, _Strict) ->
     end;
 extract_sequence(_, [], _Need, _Strict) -> {error,"truncated"}.
 
+-spec extract_sequence_digits(
+    integer(),
+    string(),
+    [need()],
+    boolean()
+) -> {'ok', [need()], string()} | {'error', string()}.
 extract_sequence_digits(Fld, [C|Fmt], Need, Strict)
   when is_integer(C), C >= $0, C =< $9 ->
     extract_sequence_digits(Fld, Fmt, Need, Strict);
 extract_sequence_digits(Fld, Fmt, Need, Strict) ->
     extract_sequence(Fld+1, Fmt, Need, Strict).
 
+-spec extract_modifiers(string(), [char()], [need()], boolean()) -> {string(), [char()], [need()]} | {error, string()}.
 extract_modifiers([C|Fmt], Modifiers0, Need0, Strict) ->
     case is_modifier(C, Need0) of
 	{true, Need1} when Strict ->
@@ -4995,6 +5606,7 @@ extract_modifiers([C|Fmt], Modifiers0, Need0, Strict) ->
 extract_modifiers([], Modifiers, Need, _Strict) ->
     {[], Modifiers, Need}.
 
+-spec check_modifiers(char(), [char()]) -> ok | {error, string()}.
 check_modifiers(C, Modifiers) ->
     maybe
         ok ?= check_modifiers_1("l", Modifiers, C, "Pp"),
@@ -5002,6 +5614,7 @@ check_modifiers(C, Modifiers) ->
         ok ?= check_modifiers_1("Kk", Modifiers, C, "PpWw")
     end.
 
+-spec check_modifiers_1(string(), string(), char(), string()) -> ok | {error, string()}.
 check_modifiers_1(M, Modifiers, C, Cs) ->
     case ordsets:intersection(ordsets:from_list(M), Modifiers) of
         [_]=Mod ->
@@ -5018,12 +5631,14 @@ check_modifiers_1(M, Modifiers, C, Cs) ->
             {error, "conflicting modifiers ~" ++ M ++ [C]}
     end.
 
+-spec is_modifier(integer(), [need()]) -> false | {true, [need()]}.
 is_modifier($k, Need) -> {true, Need};
 is_modifier($K, Need) -> {true, ['fun'|Need]};
 is_modifier($l, Need) -> {true, Need};
 is_modifier($t, Need) -> {true, Need};
 is_modifier(_, _) -> false.
 
+-spec control_type(integer(), [need()]) -> [need()] | error.
 control_type($~, Need) -> Need;
 control_type($c, Need) -> [int|Need];
 control_type($f, Need) -> [float|Need];
@@ -5046,24 +5661,31 @@ control_type(_C, _Need) -> error.
 
 
 %% Prebuild set of local functions (to override auto-import)
+-spec local_functions(
+    [erl_parse:abstract_form() | erl_parse:form_info()]
+) -> gb_sets:set(fa()).
 local_functions(Forms) ->
     gb_sets:from_list([ {Func,Arity} || {function,_,Func,Arity,_} <- Forms ]).
 %% Predicate to find out if the function is locally defined
+-spec is_local_function(gb_sets:set(fa()), fa()) -> boolean().
 is_local_function(LocalSet,{Func,Arity}) ->
     gb_sets:is_element({Func,Arity},LocalSet).
 %% Predicate to see if a function is explicitly imported
+-spec is_imported_function(orddict:orddict(fa(), module()), fa()) -> boolean().
 is_imported_function(ImportSet,{Func,Arity}) ->
     case orddict:find({Func,Arity}, ImportSet) of
         {ok,_Mod} -> true;
         error -> false
     end.
 %% Predicate to see if a function is explicitly imported from the erlang module
+-spec is_imported_from_erlang(orddict:orddict(fa(), module()), fa()) -> boolean().
 is_imported_from_erlang(ImportSet,{Func,Arity}) ->
     case orddict:find({Func,Arity}, ImportSet) of
         {ok,erlang} -> true;
         _ -> false
     end.
 %% Build set of functions where auto-import is explicitly suppressed
+-spec auto_import_suppressed(CompileFlags :: [dynamic()]) -> all | {set, gb_sets:set(fa())}.
 auto_import_suppressed(CompileFlags) ->
     case lists:member(no_auto_import, CompileFlags) of
         true ->
@@ -5074,11 +5696,13 @@ auto_import_suppressed(CompileFlags) ->
             {set, gb_sets:from_list(L1)}
     end.
 %% Predicate to find out if autoimport is explicitly suppressed for a function
+-spec is_autoimport_suppressed(all | {set, gb_sets:set(fa())}, fa()) -> boolean().
 is_autoimport_suppressed(all,{_Func,_Arity}) ->
     true;
 is_autoimport_suppressed({set, NoAutoSet},{Func,Arity}) ->
     gb_sets:is_element({Func,Arity},NoAutoSet).
 %% Predicate to find out if a function specific bif-clash suppression (old deprecated) is present
+-spec bif_clash_specifically_disabled(lint_state(), fa()) -> boolean().
 bif_clash_specifically_disabled(St,{F,A}) ->
     lists:member({F,A},St#lint.nowarn_bif_clash).
 
@@ -5088,6 +5712,7 @@ bif_clash_specifically_disabled(St,{F,A}) ->
 %% * It is overridden by -import and that import is not of itself (i.e. from module erlang)
 %% * The autoimport is suppressed or it's not reimported by -import directive
 %% Otherwise it's OK (given that it's actually a guard bif and actually is autoimported)
+-spec no_guard_bif_clash(lint_state(), fa()) -> boolean().
 no_guard_bif_clash(St,{F,A}) ->
     (
       (not is_local_function(St#lint.locals,{F,A}))
@@ -5105,6 +5730,7 @@ no_guard_bif_clash(St,{F,A}) ->
 
 %% maps_prepend(Key, Value, Map) -> Map.
 
+-spec maps_prepend(K, V, #{K => [V]}) -> #{K => [V]}.
 maps_prepend(Key, Value, Map) ->
     case maps:find(Key, Map) of
         {ok, Values} ->
