@@ -804,6 +804,8 @@ processed (see section [Error Information](#module-error-information)).
     af_assoc_exact/1,
     af_atom/0,
     af_case/0,
+    af_clause/0,
+    af_clause_seq/0,
     af_field/0,
     af_field_name/0,
     af_guard/0,
@@ -817,6 +819,8 @@ processed (see section [Error Information](#module-error-information)).
     af_record_decl/0,
     af_record_field/1,
     af_variable/0,
+    behaviour/0,
+    function_name/0,
     record_name/0
 ]).
 
