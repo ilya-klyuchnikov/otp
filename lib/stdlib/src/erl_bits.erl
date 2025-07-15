@@ -28,6 +28,8 @@
 	 set_bit_type/2,
 	 as_list/1]).
 
+-export_type([size/0, type/0]).
+
 -include("../include/erl_bits.hrl").
 
 %% Dummies.

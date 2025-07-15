@@ -146,14 +146,14 @@ to be called.
 
 -import(lists, [all/2,any/2,foldl/3,member/2,reverse/1]).
 
--export_type([binding_struct/0]).
+-export_type([binding_struct/0, bindings/0]).
 
 -type(expression() :: erl_parse:abstract_expr()).
 -doc "As returned by `erl_parse:parse_exprs/1` or `io:parse_erl_exprs/2`.".
 -type(expressions() :: [erl_parse:abstract_expr()]).
 -type(expression_list() :: [expression()]).
 -type(clauses() :: [erl_parse:abstract_clause()]).
--type(name() :: term()).
+-type(name() :: atom() | {record, integer(), atom()}).
 -type(value() :: term()).
 -type(bindings() :: [{name(), value()}]).
 -doc """

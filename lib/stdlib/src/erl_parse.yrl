@@ -803,9 +803,13 @@ processed (see section [Error Information](#module-error-information)).
     af_assoc/1,
     af_assoc_exact/1,
     af_atom/0,
+    af_binelement_size/0,
     af_case/0,
+    af_clause/0,
+    af_clause_seq/0,
     af_field/0,
     af_field_name/0,
+    af_function_type_list/0,
     af_guard/0,
     af_guard_call/0,
     af_guard_seq/0,
@@ -816,8 +820,13 @@ processed (see section [Error Information](#module-error-information)).
     af_qualifier_seq/0,
     af_record_decl/0,
     af_record_field/1,
+    af_record_field_type/0,
     af_variable/0,
-    record_name/0
+    af_wild_attribute/0,
+    behaviour/0,
+    function_name/0,
+    record_name/0,
+    type_specifier_list/0
 ]).
 
 %% Removed functions
