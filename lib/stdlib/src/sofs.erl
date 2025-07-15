@@ -126,7 +126,7 @@
 -type(binary_relation() :: relation()).
 
 -doc "An [external set](`m:sofs#external_set`).".
--type(external_set() :: term()).
+-type(external_set() :: dynamic()).
 
 -doc "A [function](`m:sofs#function`).".
 -type(a_function() :: relation()).
