@@ -235,6 +235,11 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 -type error_description() :: dynamic().
 -type error_info() :: {erl_anno:location()|'none', module(), error_description()}.
 
+-type var_table() :: orddict:orddict(
+    atom(),
+    {bound, used, [anno()]} | {bound, unused, [anno()]} | {stacktrace, unused, [anno()]}
+).
+
 %% format_error(Error)
 %%  Return a string describing the error.
 
@@ -921,9 +926,11 @@ add_warning(Anno, W, St) ->
     {File,Location} = loc(Anno, St),
     add_lint_warning({Location,erl_lint,W}, File, St).
 
+-spec add_lint_warning(tuple(), file:filename(), lint_state()) -> lint_state().
 add_lint_warning(W, File, St) ->
     St#lint{warnings=[{File,W}|St#lint.warnings]}.
 
+-spec maybe_add_warning(anno(), tuple() | atom(), lint_state()) -> lint_state().
 maybe_add_warning(Anno, W, St) ->
     Tag = if
               is_tuple(W) -> element(1, W);
@@ -1341,14 +1348,25 @@ behaviour_check(Bs, St0) ->
     St3 = behaviour_conflicting(AllBfs, St2),
     behaviour_deprecated(AllBfs0, Exports, St3).
 
+-spec all_behaviour_callbacks(
+    [{erl_anno:anno(), erl_parse:behaviour()}],
+    [{{erl_anno:anno(), erl_parse:behaviour()}, dynamic(), dynamic()}],
+    lint_state()
+) -> {[{{erl_anno:anno(), erl_parse:behaviour()}, [fa()], [fa()]}], lint_state()}.
 all_behaviour_callbacks([{Anno,B}|Bs], Acc, St0) ->
     {Bfs0,OBfs0,St} = behaviour_callbacks(Anno, B, St0),
     all_behaviour_callbacks(Bs, [{{Anno,B},Bfs0,OBfs0}|Acc], St);
 all_behaviour_callbacks([], Acc, St) -> {reverse(Acc),St}.
 
+-spec add_behaviour_warning(anno(), tuple(), lint_state()) -> lint_state().
 add_behaviour_warning(Anno, Warning, St) when is_tuple(Warning) ->
     maybe_add_warning(Anno, Warning, St).
 
+-spec behaviour_callbacks(
+    erl_anno:anno(),
+    erl_parse:behaviour(),
+    lint_state()
+) -> {[fa()], [fa()], lint_state()}.
 behaviour_callbacks(Anno, B, St0) ->
     try B:behaviour_info(callbacks) of
         undefined ->
@@ -1390,6 +1408,11 @@ behaviour_callbacks(Anno, B, St0) ->
             {[], [], St2}
     end.
 
+-spec behaviour_deprecated(
+    [{{erl_anno:anno(), erl_parse:behaviour()}, [fa()], [fa()]}],
+    gb_sets:set(fa()),
+    lint_state()
+) -> lint_state().
 behaviour_deprecated([{{Anno, B}, Bfs, _OBfs} | T], Exports, St) ->
     behaviour_deprecated(T, Exports,
                          behaviour_deprecated(Anno, B, Bfs, Exports, St));
@@ -1398,6 +1421,7 @@ behaviour_deprecated([], _Exports, St) ->
 
 -dialyzer({no_match, behaviour_deprecated/5}).
 
+-spec behaviour_deprecated(anno(), erl_parse:behaviour(), [fa()], gb_sets:set(fa()), lint_state()) -> lint_state().
 behaviour_deprecated(Anno, B, [{F, A} | T], Exports, St0) ->
     St =
         case gb_sets:is_member({F,A}, Exports) of
@@ -1416,6 +1440,7 @@ behaviour_deprecated(Anno, B, [{F, A} | T], Exports, St0) ->
 behaviour_deprecated(_Anno, _B, [], _Exports, St) ->
     St.
 
+-spec behaviour_missing_callbacks([{{anno(), erl_parse:behaviour()}, [fa()], [fa()]}], lint_state()) -> lint_state().
 behaviour_missing_callbacks([{{Anno,B},Bfs0,OBfs}|T], St0) ->
     Bfs = ordsets:subtract(ordsets:from_list(Bfs0), ordsets:from_list(OBfs)),
     Exports = gb_sets:to_list(exports(St0)),
@@ -1432,6 +1457,7 @@ behaviour_missing_callbacks([{{Anno,B},Bfs0,OBfs}|T], St0) ->
     behaviour_missing_callbacks(T, St);
 behaviour_missing_callbacks([], St) -> St.
 
+-spec behaviour_conflicting([{{anno(), erl_parse:behaviour()}, [fa()]}], lint_state()) -> lint_state().
 behaviour_conflicting(AllBfs, St) ->
     R0 = sofs:relation(AllBfs, [{item,[callback]}]),
     R1 = sofs:family_to_relation(R0),
@@ -1441,12 +1467,20 @@ behaviour_conflicting(AllBfs, St) ->
     R = sofs:to_external(R4),
     behaviour_add_conflicts(R, St).
 
+-spec behaviour_add_conflicts(sofs:external_set(), lint_state()) -> lint_state().
 behaviour_add_conflicts([{Cb,[{FirstAnno,FirstB}|Cs]}|T], St0) ->
     FirstL = element(2, loc(FirstAnno, St0)),
     St = behaviour_add_conflict(Cs, Cb, FirstL, FirstB, St0),
     behaviour_add_conflicts(T, St);
 behaviour_add_conflicts([], St) -> St.
 
+-spec behaviour_add_conflict(
+    [{anno(), erl_parse:behaviour()}],
+    fa(),
+    term(),
+    module(),
+    lint_state()
+) -> lint_state().
 behaviour_add_conflict([{Anno,B}|Cs], Cb, FirstL, FirstB, St0) ->
     St = add_behaviour_warning(Anno,
                                {conflicting_behaviours,Cb,B,FirstL,FirstB},
@@ -1469,6 +1503,7 @@ check_deprecated(Forms, St0) ->
                   add_error(Anno, E, St1)
           end, St0, Bad).
 
+-spec depr_cat(term(), [fa()], module()) -> [{bad_deprecated, {atom(), '_' | arity()}} | {invalid_deprecated, term()}].
 depr_cat({F, A, Flg}=D, X, Mod) ->
     case deprecated_flag(Flg) of
         false -> [{invalid_deprecated,D}];
@@ -1481,6 +1516,7 @@ depr_cat(module, _X, _Mod) ->
 depr_cat(D, _X, _Mod) ->
     [{invalid_deprecated,D}].
 
+-spec depr_fa(term(), term(), [fa()], module()) -> [{bad_deprecated, {atom(), '_' | arity()}} | {invalid_deprecated, term()}].
 depr_fa('_', '_', _X, _Mod) ->
     [];
 depr_fa(F, '_', X, _Mod) when is_atom(F) ->
@@ -1501,11 +1537,13 @@ depr_fa(F, A, X, Mod) when is_atom(F), is_integer(A), A >= 0 ->
 depr_fa(F, A, _X, _Mod) ->
     [{invalid_deprecated,{F,A}}].
 
+-spec deprecated_flag(term()) -> boolean().
 deprecated_flag(next_version) -> true;
 deprecated_flag(next_major_release) -> true;
 deprecated_flag(eventually) -> true;
 deprecated_flag(String) -> deprecated_desc(String).
 
+-spec deprecated_desc(term()) -> boolean().
 deprecated_desc([Char | Str]) when is_integer(Char) -> deprecated_desc(Str);
 deprecated_desc([]) -> true;
 deprecated_desc(_) -> false.
@@ -1566,6 +1604,7 @@ removed_desc([]) -> true;
 removed_desc(_) -> false.
 
 %% Ignores functions added by erl_internal:add_predefined_functions/1
+-spec ignore_predefined_funcs([fa()]) -> [fa()].
 ignore_predefined_funcs([{behaviour_info,1} | Fs]) ->
     ignore_predefined_funcs(Fs);
 ignore_predefined_funcs([{module_info,0} | Fs]) ->
@@ -2085,6 +2124,7 @@ clauses(Cs, St) ->
                   St1
           end, St, Cs).
 
+-spec clause(erl_parse:af_clause(), lint_state()) -> {var_table(), lint_state()}.
 clause({clause,_Anno,H,G,B}, St0) ->
     Vt0 = [],
     {Hvt,Hnew,St1} = head(H, Vt0, St0),
@@ -2100,9 +2140,11 @@ clause({clause,_Anno,H,G,B}, St0) ->
 %%  Check a patterns in head returning "all" variables. Not updating the
 %%  known variable list will result in multiple error messages/warnings.
 
+-spec head([erl_parse:af_pattern()], [], lint_state()) -> {var_table(), var_table(), lint_state()}.
 head(Ps, Vt, St0) ->
     head(Ps, Vt, Vt, St0).    % Old = Vt
 
+-spec head([erl_parse:af_pattern()], [], [], lint_state()) -> {var_table(), var_table(), lint_state()}.
 head([P|Ps], Vt0, Old, St0) ->
     {Pvt, Pnew, St1} = pattern(P, Vt0, Old, St0),
     {Psvt, Psnew, St2} = head(Ps, Vt0, Old, St1),
@@ -2126,9 +2168,16 @@ head([], _Vt, _Env, St) -> {[],[],St}.
 %%  A = 4, fun(<<A:A>>) -> % A #2 unused
 %%  A = 4, fun(<<A:8,16:A>>) -> % A #1 unused
 
+-spec pattern(erl_parse:af_pattern(), var_table(), lint_state()) -> {var_table(), var_table(), lint_state()}.
 pattern(P, Vt, St) ->
     pattern(P, Vt, Vt, St).    % Old = Vt
 
+-spec pattern(
+    erl_parse:af_pattern(),
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 pattern({var,_Anno,'_'}, _Vt, _Old, St) ->
     {[],[],St}; %Ignore anonymous variable
 pattern({var,Anno,V}, _Vt, Old, St) ->
@@ -2449,6 +2498,7 @@ elemtype_check(_Anno, _Type, _Size, St) ->  St.
 %%  Check a guard, return all variables.
 
 %% Disjunction of guard conjunctions
+-spec guard([erl_parse:af_guard()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 guard([L|R], Vt, St0) when is_list(L) ->
     {Gvt, St1} = guard_tests(L, Vt, St0),
     {Gsvt, St2} = guard(R, vtupdate(Gvt, Vt), St1),
@@ -2457,6 +2507,7 @@ guard(L, Vt, St0) ->
     guard_tests(L, Vt, St0).
 
 %% guard conjunction
+-spec guard_tests([erl_parse:af_guard_test()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 guard_tests([G|Gs], Vt, St0) ->
     {Gvt,St1} = guard_test(G, Vt, St0),
     {Gsvt,St2} = guard_tests(Gs, vtupdate(Gvt, Vt), St1),
@@ -2469,11 +2520,13 @@ guard_tests([], _Vt, St) -> {[],St}.
 %%  expressions in guards including the new is_XXX type tests, but
 %%  only allow the old type tests at the top level.
 
+-spec guard_test(erl_parse:af_guard_test(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 guard_test(G, Vt, St0) ->
     St1 = obsolete_guard(G, St0),
     guard_test2(G, Vt, St1).
 
 %% Specially handle record type test here.
+-spec guard_test2(erl_parse:af_guard_test(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 guard_test2({call,Anno,{atom,Ar,record},[E,A]}, Vt, St0) ->
     gexpr({call,Anno,{atom,Ar,is_record},[E,A]}, Vt, St0);
 guard_test2({call,Anno,{atom,_Aa,F},As}=G, Vt, St0) ->
@@ -2494,10 +2547,8 @@ guard_test2(G, Vt, St) ->
     %% Everything else is a guard expression.
     gexpr(G, Vt, St).
 
-%% gexpr(GuardExpression, VarTable, State) ->
-%%      {UsedVarTable,State'}
 %%  Check a guard expression, returns NewVariables.
-
+-spec gexpr(erl_parse:af_guard_test(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 gexpr({var,Anno,V}, Vt, St) ->
     expr_var(V, Anno, Vt, St);
 gexpr({char,_Anno,_C}, _Vt, St) -> {[],St};
@@ -2610,6 +2661,7 @@ gexpr(E, _Vt, St) ->
 %% gexpr_list(Expressions, VarTable, State) ->
 %%      {UsedVarTable,State'}
 
+-spec gexpr_list([erl_parse:af_guard_test()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 gexpr_list(Es, Vt, St) ->
     foldl(fun (E, {Esvt,St0}) ->
                   {Evt,St1} = gexpr(E, Vt, St0),
@@ -2772,6 +2824,7 @@ is_gexpr_fields(Fs, A, Name, {RDs,_}=Info) ->
 %%      {UsedVarTable,State'}
 %%  Check a sequence of expressions, return all variables.
 
+-spec exprs([erl_parse:abstract_expr()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 exprs([E|Es], Vt, St0) ->
     {Evt,St1} = expr(E, Vt, St0),
     {Esvt,St2} = exprs(Es, vtupdate(Evt, Vt), St1),
@@ -2784,6 +2837,7 @@ exprs([], _Vt, St) -> {[],St}.
 %%  mark illegally exported variables, e.g. from catch, as unsafe to better
 %%  show why unbound.
 
+-spec expr(erl_parse:abstract_expr(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 expr({var,Anno,V}, Vt, St) ->
     expr_var(V, Anno, Vt, St);
 expr({char,_Anno,_C}, _Vt, St) -> {[],St};
@@ -4403,6 +4457,13 @@ fun_clause({clause,_Anno,H,G,B}, Vt0, St0) ->
 %% once. New shadows Vt here, which is necessary in order to separate
 %% uses of shadowed and shadowing variables. See also pat_binsize_var.
 
+-spec pat_var(
+    atom(),
+    anno(),
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 pat_var(V, Anno, Vt, New, St0) ->
     case orddict:find(V, New) of
         {ok, {bound,_Usage,As}} ->
@@ -4591,6 +4652,7 @@ warn_unused_vars(U, Vt, St0) ->
 %%  will be updated with their property in UpdVarTable. The state of
 %%  the variables in UpdVarTable will be returned.
 
+-spec vtupdate(var_table(), var_table()) -> var_table().
 vtupdate(Uvt, Vt0) ->
     orddict:merge(fun (_V, {S,U1,A1}, {_S,U2,A2}) ->
                           {S, merge_used(U1, U2), merge_annos(A1, A2)}
@@ -4839,6 +4901,7 @@ deprecated_type(Anno, M, N, As, St) ->
             St
     end.
 
+-spec obsolete_guard(erl_parse:af_guard_test(), lint_state()) -> lint_state().
 obsolete_guard({call,Anno,{atom,Ar,F},As}, St0) ->
     Arity = length(As),
     case erl_internal:old_type_test(F, Arity) of
@@ -5172,6 +5235,7 @@ is_imported_function(ImportSet,{Func,Arity}) ->
         error -> false
     end.
 %% Predicate to see if a function is explicitly imported from the erlang module
+-spec is_imported_from_erlang(orddict:orddict(fa(), module()), fa()) -> boolean().
 is_imported_from_erlang(ImportSet,{Func,Arity}) ->
     case orddict:find({Func,Arity}, ImportSet) of
         {ok,erlang} -> true;
@@ -5205,6 +5269,7 @@ bif_clash_specifically_disabled(St,{F,A}) ->
 %% * It is overridden by -import and that import is not of itself (i.e. from module erlang)
 %% * The autoimport is suppressed or it's not reimported by -import directive
 %% Otherwise it's OK (given that it's actually a guard bif and actually is autoimported)
+-spec no_guard_bif_clash(lint_state(), fa()) -> boolean().
 no_guard_bif_clash(St,{F,A}) ->
     (
       (not is_local_function(St#lint.locals,{F,A}))
