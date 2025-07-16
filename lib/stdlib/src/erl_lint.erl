@@ -4813,15 +4813,16 @@ is_literal_update(_Expr) ->
 %% check_remote_function(Anno, ModuleName, FuncName, [Arg], State) -> State.
 %%  Perform checks on known remote calls.
 
+-spec check_remote_function(anno(), module(), atom(), [erl_parse:abstract_expr()], lint_state()) -> lint_state().
 check_remote_function(Anno, M, F, As, St0) ->
     St1 = deprecated_function(Anno, M, F, As, St0),
     St2 = check_qlc_hrl(Anno, M, F, As, St1),
     St3 = check_load_nif(Anno, M, F, As, St2),
     format_function(Anno, M, F, As, St3).
 
-%% check_load_nif(Anno, ModName, FuncName, [Arg], State) -> State
 %%  Add warning if erlang:load_nif/2 is called when any kind of inlining has
 %%  been enabled.
+-spec check_load_nif(anno(), module(), atom(), [erl_parse:abstract_expr()], lint_state()) -> lint_state().
 check_load_nif(Anno, erlang, load_nif, [_, _], St0) ->
     St = St0#lint{load_nif = true},
     case is_warn_enabled(nif_inline, St) of
@@ -4841,10 +4842,10 @@ is_inline_opt({inline, [_|_]=_FAs}) -> true;
 is_inline_opt(inline) -> true;
 is_inline_opt(_) -> false.
 
-%% check_qlc_hrl(Anno, ModName, FuncName, [Arg], State) -> State
 %%  Add warning if qlc:q/1,2 has been called but qlc.hrl has not
 %%  been included.
 
+-spec check_qlc_hrl(anno(), module(), atom(), [erl_parse:abstract_expr()], lint_state()) -> lint_state().
 check_qlc_hrl(Anno, M, F, As, St) ->
     Arity = length(As),
     case As of
@@ -4860,6 +4861,7 @@ check_qlc_hrl(Anno, M, F, As, St) ->
 
 -dialyzer({no_match, deprecated_function/5}).
 
+-spec deprecated_function(anno(), module(), atom(), [erl_parse:abstract_expr()], lint_state()) -> lint_state().
 deprecated_function(Anno, M, F, As, St) ->
     Arity = length(As),
     MFA = {M, F, Arity},
@@ -4964,9 +4966,9 @@ keyword_warning(Anno, Atom, St) ->
             St
     end.
 
-%% format_function(Anno, ModName, FuncName, [Arg], State) -> State.
 %%  Add warning for bad calls to io:fwrite/format functions.
 
+-spec format_function(anno(), module(), atom(), [erl_parse:abstract_expr()], lint_state()) -> lint_state().
 format_function(DefAnno, M, F, As, St) ->
     maybe
         true ?= is_format_function(M, F),
@@ -4983,6 +4985,7 @@ format_function(DefAnno, M, F, As, St) ->
         false -> St
     end.
 
+-spec is_format_function(module(), atom()) -> boolean().
 is_format_function(io, fwrite) -> true;
 is_format_function(io, format) -> true;
 is_format_function(io_lib, fwrite) -> true;
@@ -4991,6 +4994,8 @@ is_format_function(M, F) when is_atom(M), is_atom(F) -> false.
 
 %% check_format_1([Arg]) -> ok | {warn,Level,Format,[Arg]}.
 
+-spec check_format_1([erl_parse:abstract_expr() | no_argument_list]) ->
+    ok | {warn, Level, Fmt, Fas} | {warn, Level, anno(), Fmt, Fas} when Level :: integer(), Fmt :: string(), Fas :: [term()].
 check_format_1([Fmt]) ->
     check_format_1([Fmt,no_argument_list]);
 check_format_1([Fmt,As]) ->
@@ -5000,12 +5005,15 @@ check_format_1([_Dev,Fmt,As]) ->
 check_format_1(_As) ->
     {warn,1,"format call with wrong number of arguments",[]}.
 
+-spec canonicalize_string(erl_parse:abstract_expr() | no_argument_list) -> erl_parse:abstract_expr() | no_argument_list.
 canonicalize_string({string,Anno,Cs}) ->
     % eqwalizer:ignore
     foldr(fun (C, T) -> {cons,Anno,{integer,Anno,C},T} end, {nil,Anno}, Cs);
 canonicalize_string(Term) ->
     Term.
 
+-spec check_format_2(erl_parse:abstract_expr() | no_argument_list, erl_parse:abstract_expr() | no_argument_list) ->
+    ok | {warn, Level, anno(), Fmt, Fas} when Level :: integer(), Fmt :: string(), Fas :: [term()].
 check_format_2(Fmt, As) ->
     case Fmt of
         {string,A,S} ->
@@ -5017,6 +5025,8 @@ check_format_2(Fmt, As) ->
             {warn,2,Anno,"format string not a textual constant",[]}
     end.
 
+-spec check_format_2a(string(), anno(), erl_parse:abstract_expr() | no_argument_list) ->
+    ok | {warn, Level, anno(), Fmt, Fas} when Level :: integer(), Fmt :: string(), Fas :: [term()].
 check_format_2a(Fmt, FmtAnno, no_argument_list=As) ->
     check_format_3(Fmt, FmtAnno, As);
 check_format_2a(Fmt, FmtAnno, As) ->
@@ -5031,6 +5041,8 @@ check_format_2a(Fmt, FmtAnno, As) ->
             {warn,2,Anno,"format arguments perhaps not a list",[]}
     end.
 
+-spec check_format_3(string(), anno(), erl_parse:abstract_expr() | no_argument_list) ->
+    ok | {warn, Level, anno(), Fmt, Fas} when Level :: integer(), Fmt :: string(), Fas :: [term()].
 check_format_3(Fmt, FmtAnno, As) ->
     case check_format_string(Fmt, true) of
         {ok,Need} ->
@@ -5039,6 +5051,8 @@ check_format_3(Fmt, FmtAnno, As) ->
             {warn,1,FmtAnno,"format string invalid (~ts)",[S]}
     end.
 
+-spec check_format_4([need()], anno(), erl_parse:abstract_expr() | no_argument_list) ->
+    ok | {warn, Level, anno(), Fmt, Fas} when Level :: integer(), Fmt :: string(), Fas :: [term()].
 check_format_4([], _FmtAnno, no_argument_list) ->
     ok;
 check_format_4(Need, FmtAnno, no_argument_list) ->
@@ -5069,6 +5083,7 @@ arguments(1) ->
 arguments(N) ->
     [integer_to_list(N), " arguments"].
 
+-spec args_list(erl_parse:abstract_expr()) -> boolean() | 'maybe'.
 args_list({cons,_A,_H,T}) -> args_list(T);
 %% Strange case: user has written something like [a | "bcd"]; pretend
 %% we don't know:
