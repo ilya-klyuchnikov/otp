@@ -23,6 +23,7 @@
 %% Do necessary checking of Erlang code.
 
 -module(erl_lint).
+% -compile(warn_missing_spec_all).
 -moduledoc """
 The Erlang code linter.
 
@@ -5081,12 +5082,15 @@ args_list(_Other) -> 'maybe'.
 args_length({cons,_A,_H,T}) -> 1 + args_length(T);
 args_length({nil,_A}) -> 0.
 
+-type need() :: int | 'fun' | float | string | term.
 
 -doc false.
+-spec check_format_string(io:format()) -> {ok, [need()]} | {error, string()}.
 check_format_string(Fmt) ->
     check_format_string(Fmt, true).
 
 -doc false.
+-spec check_format_string(io:format(), boolean()) -> {ok, [need()]} | {error, string()}.
 check_format_string(Fmt, Strict) when is_atom(Fmt) ->
     check_format_string(atom_to_list(Fmt), Strict);
 check_format_string(Fmt, Strict) when is_binary(Fmt) ->
@@ -5094,6 +5098,7 @@ check_format_string(Fmt, Strict) when is_binary(Fmt) ->
 check_format_string(Fmt, Strict) ->
     extract_sequences(Fmt, [], Strict).
 
+-spec extract_sequences(string(), [need()], boolean()) -> {ok, [need()]} | {error, string()}.
 extract_sequences(Fmt, Need0, Strict) ->
     case string:find(Fmt, [$~]) of
         nomatch -> {ok,lists:reverse(Need0)};         %That's it
@@ -5104,6 +5109,7 @@ extract_sequences(Fmt, Need0, Strict) ->
             end
     end.
 
+-spec extract_sequence(integer(), string(), [need()], boolean()) -> {ok, [need()], string()} | {error, string()}.
 extract_sequence(1, [$-,C|Fmt], Need, Strict)
   when is_integer(C), C >= $0, C =< $9 ->
     extract_sequence_digits(1, Fmt, Need, Strict);
@@ -5154,12 +5160,19 @@ extract_sequence(5, [C|Fmt], Need0, _Strict) ->
     end;
 extract_sequence(_, [], _Need, _Strict) -> {error,"truncated"}.
 
+-spec extract_sequence_digits(
+    integer(),
+    string(),
+    [need()],
+    boolean()
+) -> {'ok', [need()], string()} | {'error', string()}.
 extract_sequence_digits(Fld, [C|Fmt], Need, Strict)
   when is_integer(C), C >= $0, C =< $9 ->
     extract_sequence_digits(Fld, Fmt, Need, Strict);
 extract_sequence_digits(Fld, Fmt, Need, Strict) ->
     extract_sequence(Fld+1, Fmt, Need, Strict).
 
+-spec extract_modifiers(string(), [char()], [need()], boolean()) -> {string(), [char()], [need()]} | {error, string()}.
 extract_modifiers([C|Fmt], Modifiers0, Need0, Strict) ->
     case is_modifier(C, Need0) of
 	{true, Need1} when Strict ->
@@ -5177,6 +5190,7 @@ extract_modifiers([C|Fmt], Modifiers0, Need0, Strict) ->
 extract_modifiers([], Modifiers, Need, _Strict) ->
     {[], Modifiers, Need}.
 
+-spec check_modifiers(char(), [char()]) -> ok | {error, string()}.
 check_modifiers(C, Modifiers) ->
     maybe
         ok ?= check_modifiers_1("l", Modifiers, C, "Pp"),
@@ -5184,6 +5198,7 @@ check_modifiers(C, Modifiers) ->
         ok ?= check_modifiers_1("Kk", Modifiers, C, "PpWw")
     end.
 
+-spec check_modifiers_1(string(), string(), char(), string()) -> ok | {error, string()}.
 check_modifiers_1(M, Modifiers, C, Cs) ->
     case ordsets:intersection(ordsets:from_list(M), Modifiers) of
         [_]=Mod ->
@@ -5200,12 +5215,14 @@ check_modifiers_1(M, Modifiers, C, Cs) ->
             {error, "conflicting modifiers ~" ++ M ++ [C]}
     end.
 
+-spec is_modifier(integer(), [need()]) -> false | {true, [need()]}.
 is_modifier($k, Need) -> {true, Need};
 is_modifier($K, Need) -> {true, ['fun'|Need]};
 is_modifier($l, Need) -> {true, Need};
 is_modifier($t, Need) -> {true, Need};
 is_modifier(_, _) -> false.
 
+-spec control_type(integer(), [need()]) -> [need()] | error.
 control_type($~, Need) -> Need;
 control_type($c, Need) -> [int|Need];
 control_type($f, Need) -> [float|Need];
@@ -5238,6 +5255,7 @@ local_functions(Forms) ->
 is_local_function(LocalSet,{Func,Arity}) ->
     gb_sets:is_element({Func,Arity},LocalSet).
 %% Predicate to see if a function is explicitly imported
+-spec is_imported_function(orddict:orddict(fa(), module()), fa()) -> boolean().
 is_imported_function(ImportSet,{Func,Arity}) ->
     case orddict:find({Func,Arity}, ImportSet) of
         {ok,_Mod} -> true;
