@@ -1563,6 +1563,7 @@ check_removed(Forms, St0) ->
                   add_error(Anno, E, St1)
           end, St0, Bad).
 
+-spec removed_cat({atom(), arity(), string()} | fa() | module(), [fa()], module()) -> [{bad_removed, term()} | {invalid_removed, term()}].
 removed_cat({F, A, Desc}=R, X, Mod) ->
     case removed_desc(Desc) of
         false -> [{invalid_removed,R}];
@@ -1575,6 +1576,7 @@ removed_cat(module, X, Mod) ->
 removed_cat(R, _X, _Mod) ->
     [{invalid_removed,R}].
 
+-spec removed_fa(atom(), atom() | arity(), [fa()], module()) -> [{bad_removed, term()} | {invalid_removed, term()}].
 removed_fa('_', '_', X, _Mod) ->
     case X of
         [_|_] -> [{bad_removed,{'_','_'}}];
@@ -1599,6 +1601,7 @@ removed_fa(F, A, X, Mod) when is_atom(F), is_integer(A), A >= 0 ->
 removed_fa(F, A, _X, _Mod) ->
     [{invalid_removed,{F,A}}].
 
+-spec removed_desc(term()) -> boolean().
 removed_desc([Char | Str]) when is_integer(Char) -> removed_desc(Str);
 removed_desc([]) -> true;
 removed_desc(_) -> false.
@@ -1741,6 +1744,12 @@ check_bif_clashes(Forms, St0) ->
     check_option_functions(Forms, nowarn_bif_clash,
                            bad_nowarn_bif_clash, St0).
 
+-spec check_option_functions(
+    [erl_parse:abstract_form() | erl_parse:form_info()],
+    atom(),
+    atom(),
+    lint_state()
+) -> lint_state().
 check_option_functions(Forms, Tag0, Type, St0) ->
     %% There are no line numbers in St0#lint.compile.
     FAsAnno = [{FA,Anno} || {attribute, Anno, compile, Args} <- Forms,
