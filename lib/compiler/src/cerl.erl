@@ -24,6 +24,7 @@
 %%
 
 -module(cerl).
+-compile(warn_missing_spec_all).
 -moduledoc """
 Core Erlang abstract syntax trees.
 
@@ -195,7 +196,7 @@ function `type/1`.
 
 -type ctype() :: 'alias'   | 'apply'  | 'binary' | 'bitstr' | 'call' | 'case'
                | 'catch'   | 'clause' | 'cons'   | 'fun'    | 'let'  | 'letrec'
-               | 'literal' | 'map'  | 'map_pair' | 'module' | 'primop'
+               | 'literal' | 'map'  | 'map_pair' | 'module' | 'opaque' | 'primop'
                | 'receive' | 'seq'    | 'try'    | 'tuple'  | 'values' | 'var'.
 
 -doc """
@@ -418,7 +419,7 @@ Note: This is a constant time operation.
 
 _See also: _`abstract/1`, `is_literal/1`.
 """.
--spec concrete(Node :: c_literal()) -> term().
+-spec concrete(Node :: c_literal()) -> dynamic().
 
 concrete(#c_literal{val = V}) ->
     V.
@@ -470,6 +471,7 @@ fold_literal(Node) ->
 	    Node
     end.
 
+-spec fold_literal_list([cerl()]) -> [cerl()].
 fold_literal_list([E | Es]) ->
     [fold_literal(E) | fold_literal_list(Es)];
 fold_literal_list([]) ->
@@ -499,6 +501,7 @@ unfold_literal(Node) ->
 	    Node
     end.
 
+-spec unfold_concrete(term()) -> c_literal() | c_tuple() | c_cons().
 unfold_concrete(Val) ->
     case Val of
 	_ when is_tuple(Val) ->
@@ -509,6 +512,7 @@ unfold_concrete(Val) ->
 	    abstract(Val)
     end.
 
+-spec unfold_concrete_list([term()]) -> [c_literal() | c_tuple() | c_cons()].
 unfold_concrete_list([E | Es]) ->
     [unfold_concrete(E) | unfold_concrete_list(Es)];
 unfold_concrete_list([]) ->
@@ -518,7 +522,7 @@ unfold_concrete_list([]) ->
 %% ---------------------------------------------------------------------
 
 -doc #{equiv => c_module(Name, Exports, [], Definitions)}.
--spec c_module(Name :: cerl(),
+-spec c_module(Name :: c_literal(),
                Exports :: [cerl()],
                Definitions :: [{cerl(), cerl()}]) -> c_module().
 
@@ -610,7 +614,7 @@ Returns the name subtree of an abstract module definition.
 
 _See also: _`c_module/4`.
 """.
--spec module_name(Node :: c_module()) -> cerl().
+-spec module_name(Node :: c_module()) -> c_literal().
 
 module_name(Node) ->
     Node#c_module.name.
@@ -1221,6 +1225,7 @@ is_c_list(#c_literal{val = V}) ->
 is_c_list(_) ->
     false.
 
+-spec is_proper_list(term()) -> boolean().
 is_proper_list([_ | Tail]) ->
     is_proper_list(Tail);
 is_proper_list([]) ->
@@ -1246,6 +1251,7 @@ list_elements(#c_cons{hd = Head, tl = Tail}) ->
 list_elements(#c_literal{val = V}) ->
     abstract_list(V).
 
+-spec abstract_list([term()]) -> [c_literal()].
 abstract_list([X | Xs]) ->
     [abstract(X) | abstract_list(Xs)];
 abstract_list([]) ->
@@ -1269,6 +1275,7 @@ _See also: _`c_cons/2`, `c_nil/0`, `is_c_list/1`, `list_elements/1`.
 list_length(L) ->
     list_length(L, 0).
 
+-spec list_length(c_cons() | c_literal(), integer()) -> integer().
 list_length(#c_cons{tl = Tail}, A) ->
     list_length(Tail, A + 1);
 list_length(#c_literal{val = V}, A) ->
@@ -1507,6 +1514,7 @@ ann_c_map(As, M, Es) ->
 ann_c_map_pattern(As, Pairs) ->
     #c_map{anno=As, es=Pairs, is_pat=true}.
 
+-spec update_map_literal([c_map_pair()], #{term() => term()}) -> none | #{term() => term()}.
 update_map_literal([#c_map_pair{op=#c_literal{val=assoc},key=Ck,val=Cv}|Es], M) ->
     %% M#{K => V}
     case is_lit_list([Ck,Cv]) of
@@ -2799,6 +2807,7 @@ _See also: _`clause_vars/1`, `pat_list_vars/1`.
 pat_vars(Node) ->
     pat_vars(Node, []).
 
+-spec pat_vars(cerl(), [cerl()]) -> [cerl()].
 pat_vars(Node, Vs) ->
     case type(Node) of
 	var ->
@@ -2838,6 +2847,7 @@ _See also: _`clause_vars/1`, `pat_vars/1`.
 pat_list_vars(Ps) ->
     pat_list_vars(Ps, []).
 
+-spec pat_list_vars([cerl()], [cerl()]) -> [cerl()].
 pat_list_vars([P | Ps], Vs) ->
     pat_list_vars(Ps, pat_vars(P, Vs));
 pat_list_vars([], Vs) ->
@@ -3930,6 +3940,7 @@ meta(Node) ->
 	    meta_0(Type, Node)
     end.
 
+-spec meta_0(atom(), cerl()) -> cerl().
 meta_0(Type, Node) ->
     case get_ann(Node) of
 	[] ->
@@ -3938,6 +3949,7 @@ meta_0(Type, Node) ->
 	    meta_call(set_ann, [meta_1(Type, Node), abstract(As)])
     end.
 
+-spec meta_1(atom(), cerl()) -> cerl().
 meta_1(literal, Node) ->
     %% We handle atomic literals separately, to get a bit
     %% more compact code. For the rest, we use 'abstract'.
@@ -3970,7 +3982,7 @@ meta_1(bitstr, Node) ->
 	       meta(bitstr_type(Node)),
 	       meta(bitstr_flags(Node))]);
 meta_1(cons, Node) ->
-    %% The list is split up if some sublist has annotatations. If
+    %% The list is split up if some sublist has annotations. If
     %% we get exactly one element, we generate a 'c_cons' call
     %% instead of 'make_list' to reconstruct the node.
     case split_list(Node) of
@@ -4046,17 +4058,21 @@ meta_1(module, Node) ->
 	       make_list([c_tuple([meta(N), meta(F)])
 			  || {N, F} <:- module_defs(Node)])]).
 
+-spec meta_call(atom(), [cerl()]) -> c_call().
 meta_call(F, As) ->
     c_call(c_atom(?MODULE), c_atom(F), As).
 
+-spec meta_list([cerl()]) -> [cerl()].
 meta_list([T | Ts]) ->
     [meta(T) | meta_list(Ts)];
 meta_list([]) ->
     [].
 
+-spec split_list(cerl()) -> {[cerl()], cerl()}.
 split_list(Node) ->
     split_list(set_ann(Node, []), []).
 
+-spec split_list(cerl(), [cerl()]) -> {[cerl()], cerl()}.
 split_list(Node, L) ->
     A = get_ann(Node),
     case type(Node) of
@@ -4071,6 +4087,7 @@ split_list(Node, L) ->
 
 %% General utilities
 
+-spec is_lit_list([term()]) -> boolean().
 is_lit_list([#c_literal{} | Es]) ->
     is_lit_list(Es);
 is_lit_list([_ | _]) ->
@@ -4078,6 +4095,7 @@ is_lit_list([_ | _]) ->
 is_lit_list([]) ->
     true.
 
+-spec lit_list_vals([term()]) -> [c_literal()].
 lit_list_vals([#c_literal{val = V} | Es]) ->
     [V | lit_list_vals(Es)];
 lit_list_vals([]) ->
@@ -4093,9 +4111,11 @@ make_lit_list([]) ->
 %% The following tests are the same as done by 'io_lib:char_list' and
 %% 'io_lib:printable_list', respectively, but for a single character.
 
+-spec is_char_value(term()) -> boolean().
 is_char_value(V) when V >= $\000, V =< $\377 -> true;
 is_char_value(_) -> false.
 
+-spec is_print_char_value(term()) -> boolean().
 is_print_char_value(V) when V >= $\040, V =< $\176 -> true;
 is_print_char_value(V) when V >= $\240, V =< $\377 -> true;
 is_print_char_value(V) when V =:= $\b -> true;
@@ -4112,6 +4132,7 @@ is_print_char_value(V) when V =:= $\' -> true;
 is_print_char_value(V) when V =:= $\\ -> true;
 is_print_char_value(_) -> false.
 
+-spec is_char_list(term()) -> boolean().
 is_char_list([V | Vs]) when is_integer(V) ->
     is_char_value(V) andalso is_char_list(Vs);
 is_char_list([]) ->
@@ -4119,6 +4140,7 @@ is_char_list([]) ->
 is_char_list(_) ->
     false.
 
+-spec is_print_char_list(term()) -> boolean().
 is_print_char_list([V | Vs]) when is_integer(V) ->
     is_print_char_value(V) andalso is_print_char_list(Vs);
 is_print_char_list([]) ->
@@ -4126,11 +4148,13 @@ is_print_char_list([]) ->
 is_print_char_list(_) ->
     false.
 
+-spec unfold_tuples([{cerl(), cerl()}]) -> [cerl()].
 unfold_tuples([{X, Y} | Ps]) ->
     [X, Y | unfold_tuples(Ps)];
 unfold_tuples([]) ->
     [].
 
+-spec fold_tuples([cerl()]) -> [{cerl(), cerl()}].
 fold_tuples([X, Y | Es]) ->
     [{X, Y} | fold_tuples(Es)];
 fold_tuples([]) ->

@@ -84,7 +84,7 @@
 		     key :: any(),              % TODO
 		     val :: any()}).            % TODO
 
--record(c_module, {anno=[] :: list(), name :: cerl:cerl(),
+-record(c_module, {anno=[] :: list(), name :: cerl:c_literal(),
 		   exports :: [cerl:cerl()],
 		   attrs :: [{cerl:cerl(), cerl:cerl()}],
 		   defs :: [{cerl:cerl(), cerl:cerl()}]}).
