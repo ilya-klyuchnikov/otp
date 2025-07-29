@@ -28,7 +28,14 @@
 	 set_bit_type/2,
 	 as_list/1]).
 
--export_type([size/0, type/0]).
+-export_type([
+    bt_endian/0,
+    bt_sign/0,
+    bt_type/0,
+    bt_unit/0,
+    size/0,
+    type/0
+]).
 
 -include("../include/erl_bits.hrl").
 
@@ -43,7 +50,7 @@ system_bitdefault() -> no_system_bitdefault.
 system_bittypes() -> no_system_types.
 
 -spec as_list(#bittype{}) ->
-    [bt_endian() | bt_sign() | bt_type() | {'unit', 'undefined' | bt_unit()}].
+    [bt_endian() | bt_sign() | bt_type() | {'unit', bt_unit()}].
 
 as_list(Bt) ->
     [Bt#bittype.type,{unit,Bt#bittype.unit},Bt#bittype.sign,Bt#bittype.endian].
