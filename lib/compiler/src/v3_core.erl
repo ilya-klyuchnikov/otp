@@ -122,7 +122,7 @@
 -record(iprotect,  {anno=#a{},body}).
 -record(ireceive1, {anno=#a{},clauses}).
 -record(ireceive2, {anno=#a{},clauses,timeout,action}).
--record(iset,      {anno=#a{},var,arg}).
+-record(iset,      {anno=#a{}, var, arg :: c() | i()}).
 -record(itry,      {anno=#a{},args,vars,body,evars,handler}).
 -record(ifilter,   {anno=#a{},arg}).
 -record(igen,      {anno=#a{},acc_pat,acc_guard,
@@ -133,10 +133,11 @@
                     nomatch_pats=[],nomatch_total=[],skip_pats=[],
                     tails=[],tail_pats=[],pres=[],args=[],
                     refill_pats=[],refill_as=[]}).
--record(isimple,   {anno=#a{},term :: cerl:cerl()}).
+-record(isimple,   {anno=#a{},term :: c()}).
 
 -type iapply()    :: #iapply{}.
 -type ibinary()   :: #ibinary{}.
+-type ibitstr()   :: #ibitstr{}.
 -type icall()     :: #icall{}.
 -type icase()     :: #icase{}.
 -type icatch()    :: #icatch{}.
@@ -144,6 +145,7 @@
 -type ifun()      :: #ifun{}.
 -type iletrec()   :: #iletrec{}.
 -type imatch()    :: #imatch{}.
+-type iexprs()    :: #iexprs{}.
 -type imap()      :: #imap{}.
 -type iprimop()   :: #iprimop{}.
 -type iprotect()  :: #iprotect{}.
@@ -156,13 +158,14 @@
 -type izip()      :: #izip{}.
 -type isimple()   :: #isimple{}.
 
+-type c() :: cerl:cerl().
 -type i() :: iapply()    | ibinary()   | icall()     | icase()  | icatch()
            | iclause()   | ifun()      | iletrec()   | imatch() | imap()
            | iprimop()   | iprotect()  | ireceive1() | ireceive2()
-           | iset()      | itry()      | ifilter()
+           | iset()      | itry()      | ifilter()   | iexprs()
            | igen()      | izip()      | isimple().
 
--type warning() :: {file:filename(), [{integer(), module(), term()}]}.
+-type warning() :: {file:filename(), [{erl_anno:location(), module(), term()}]}.
 
 -record(core, {vcount=0 :: non_neg_integer(),	%Variable counter
 	       fcount=0 :: non_neg_integer(),	%Function counter
@@ -176,21 +179,20 @@
                file=[{file,""}],                %File.
                load_nif=false :: boolean()      %true if calls erlang:load_nif/2
 	      }).
+-type state() :: #core{}.
 
 %% XXX: The following type declarations do not belong in this module
 -type fa()        :: {atom(), arity()}.
--type attribute() :: atom().
--type form()      :: {function, integer(), atom(), arity(), _}
-                   | {attribute, integer(), attribute(), _}.
+-type form()      :: erl_parse:abstract_form() | erl_parse:form_info().
 
--record(imodule, {name = [],
-		  exports = ordsets:new(),
+-record(imodule, {name = [] :: module() | [],
+		  exports = ordsets:new() :: ordsets:ordset(fa()),
                   nifs = none ::
                     'none' | sets:set(), % Is a set if the attribute is
                                          % present in the module.
-		  attrs = [],
-		  defs = [],
-		  file = [],
+		  attrs = [] ::  [{cerl:c_literal(), cerl:c_literal()}],
+		  defs = [] :: [{cerl:c_var(), c()}],
+		  file = [] :: file:filename(),
 		  opts = [],
 		  ws = [],
                   load_nif=false :: boolean() %true if calls erlang:load_nif/2
@@ -221,6 +223,7 @@ module(Forms0, Opts) ->
 
     {ok,#c_module{name=#c_literal{val=Mod},exports=Cexp,attrs=As,defs=Kfs},Ws}.
 
+-spec form(form(), #imodule{}, [compile:option()]) -> #imodule{}.
 form({function,_,_,_,_}=F0,
      #imodule{defs=Defs,load_nif=LoadNif0}=Module,
      Opts) ->
@@ -252,6 +255,7 @@ form(_, Module, _Opts) ->
     %% Ignore uninteresting forms such as 'eof'.
     Module.
 
+-spec attribute(erl_parse:af_wild_attribute()) -> {cerl:c_literal(), cerl:c_literal()}.
 attribute({attribute,A,Name,Val0}) ->
     Line = [erl_anno:location(A)],
     Val = if
@@ -260,6 +264,7 @@ attribute({attribute,A,Name,Val0}) ->
 	  end,
     {#c_literal{val=Name, anno=Line}, #c_literal{val=Val, anno=Line}}.
 
+-spec defined_functions([form()]) -> ordsets:ordset(fa()).
 defined_functions(Forms) ->
     Fs = [{Name,Arity} || {function,_,Name,Arity,_} <- Forms],
     ordsets:from_list(Fs).
@@ -269,6 +274,7 @@ defined_functions(Forms) ->
 %%     io:format("~w/~w " ++ Format,[Name,Arity]++Terms),
 %%     ok.
 
+-spec function(erl_parse:af_function_decl(), #imodule{}, [compile:option()]) -> {{cerl:c_var(), c()}, [warning()], boolean()}.
 function({function,_,Name,Arity,Cs0}, Module, Opts)
   when is_integer(Arity), 0 =< Arity, Arity =< 255 ->
     #imodule{file=File, ws=Ws0, nifs=Nifs} = Module,
@@ -292,6 +298,7 @@ function({function,_,Name,Arity,Cs0}, Module, Opts)
 	    erlang:raise(Class, Error, Stack)
     end.
 
+-spec handle_debug_line(erl_parse:af_clause_seq(), state()) -> {erl_parse:af_clause_seq(), [{debug_line, dynamic()}]}.
 handle_debug_line(Cs0, #core{opts=Opts}=St) ->
     maybe
         true ?= member(beam_debug_info, Opts),
@@ -302,6 +309,7 @@ handle_debug_line(Cs0, #core{opts=Opts}=St) ->
             {Cs0,[]}
     end.
 
+-spec body(erl_parse:af_clause_seq(), atom(), arity(), state()) -> {ifun(), state()}.
 body(Cs0, Name, Arity, St0) ->
     Anno = lineno_anno(element(2, hd(Cs0)), St0),
     FunAnno = [{function,{Name,Arity}} | Anno],
@@ -316,12 +324,14 @@ body(Cs0, Name, Arity, St0) ->
 %% clauses([Clause], State) -> {[Cclause],State}.
 %%  Convert clauses. Trap bad pattern aliases.
 
+-spec clauses([erl_parse:af_clause()], state()) -> {[iclause()], state()}.
 clauses([C0|Cs0], St0) ->
     {C,St1} = clause(C0, St0),
     {Cs,St2} = clauses(Cs0, St1),
     {[C|Cs],St2};
 clauses([], St) -> {[],St}.
 
+-spec clause(erl_parse:af_clause(), state()) -> {iclause(), state()}.
 clause({clause,Lc,H0,G0,B0}, St0) ->
     try head(H0, St0) of
 	{H1,St1} ->
@@ -345,10 +355,12 @@ clause({clause,Lc,H0,G0,B0}, St0) ->
             clause({clause,LcNoWarn,H1,G1,B0}, St1)
     end.
 
+-spec clause_arity(erl_parse:af_clause()) -> integer().
 clause_arity({clause,_,H0,_,_}) -> length(H0).
 
 %% head([P], State) -> {[P],[Cexpr],State}.
 
+-spec head([erl_parse:af_pattern()], state()) -> {[c() | imap() | ibinary()], state()}.
 head(Ps, St) ->
     pattern_list(Ps, St).
 
@@ -356,6 +368,7 @@ head(Ps, St) ->
 %%  Build an explicit and/or tree of guard alternatives, then traverse
 %%  top-level and/or tree and "protect" inner tests.
 
+-spec guard([erl_parse:af_guard()], state()) -> {[c() | i()], state()}.
 guard([], St) -> {[],St};
 guard(Gs0, St0) ->
     Gs1 = foldr(fun (Gt0, Rhs) ->
@@ -366,6 +379,11 @@ guard(Gs0, St0) ->
     {Gs,St} = gexpr_top(Gs1, St0#core{in_guard=true}),
     {Gs,St#core{in_guard=false}}.
 
+-type prot_guard() ::
+    {protect, erl_anno:anno(), erl_parse:af_guard_test()}
+    | {op, erl_anno:anno(), 'or', prot_guard(), prot_guard()}.
+
+-spec guard_tests(erl_parse:af_guard()) -> prot_guard().
 guard_tests(Gs) ->
     L = element(2, hd(Gs)),
     {protect,L,foldr(fun (G, Rhs) -> {op,L,'and',G,Rhs} end, last(Gs), droplast(Gs))}.
@@ -375,6 +393,7 @@ guard_tests(Gs) ->
 %%  handle outer boolean expressions and "protect" inner tests in a
 %%  reasonably smart way.
 
+-spec gexpr_top(prot_guard(), state()) -> {[c() | i()], state()}.
 gexpr_top(E0, St0) ->
     {E1,Eps0,Bools,St1} = gexpr(E0, [], St0),
     {E,Eps,St} = force_booleans(Bools, E1, Eps0, St1),
@@ -383,6 +402,8 @@ gexpr_top(E0, St0) ->
 %% gexpr(Expr, Bools, State) -> {Cexpr,[PreExp],Bools,State}.
 %%  Generate an internal core expression of a guard test.
 
+-spec gexpr(prot_guard() | erl_parse:abstract_expr(), Bools, state()) -> {c() | i(), [c() | i()], Bools, state()} when
+    Bools :: [cerl:c_var()].
 gexpr({protect,Line,Arg}, Bools0, St0) ->
     case gexpr(Arg, [], St0) of
 	{E0,[],Bools,St1} ->
@@ -433,6 +454,14 @@ gexpr(E0, Bools, St0) ->
 %% gexpr_bool(L, R, Bools, State) -> {Cexpr,[PreExp],Bools,State}.
 %%  Generate a guard for boolean operators
 
+-spec gexpr_bool(
+    Op :: atom(),
+    L :: prot_guard() | erl_parse:abstract_expr(),
+    R :: prot_guard() | erl_parse:abstract_expr(),
+    Bools :: [cerl:c_var()],
+    St :: state(),
+    Line :: erl_anno:anno()
+) -> {icall(), [c() | i()], [cerl:c_var()], state()}.
 gexpr_bool(Op, L, R, Bools0, St0, Line) ->
     {Le,Lps,Bools1,St1} = gexpr(L, Bools0, St0),
     {Ll,Llps,St2} = force_safe(Le, St1),
@@ -447,6 +476,12 @@ gexpr_bool(Op, L, R, Bools0, St0, Line) ->
 %% gexpr_not(Expr, Bools, State) -> {Cexpr,[PreExp],Bools,State}.
 %%  Generate an erlang:'not'/1 guard test.
 
+-spec gexpr_not(
+    erl_parse:abstract_expr(),
+    Bools,
+    state(),
+    erl_anno:anno()
+) -> {c() | i(), [c() | i()], Bools, state()} when Bools :: [cerl:c_var()].
 gexpr_not(A, Bools0, St0, Line) ->
     {Ae0,Aps,Bools,St1} = gexpr(A, Bools0, St0),
     case Ae0 of
@@ -494,6 +529,8 @@ gexpr_not(A, Bools0, St0, Line) ->
 %%  a proper boolean value here so wrap things with an true test if we
 %%  don't know, i.e. if it is not a comparison or a type test.
 
+-spec gexpr_test(prot_guard() | erl_parse:abstract_expr(), Bools, state()) -> {c() | i(), [c() | i()], Bools, state()} when
+    Bools :: [cerl:c_var()].
 gexpr_test({atom,L,true}, Bools, St0) ->
     {#c_literal{anno=lineno_anno(L, St0),val=true},[],Bools,St0};
 gexpr_test({atom,L,false}, Bools, St0) ->
@@ -533,6 +570,7 @@ gexpr_test(E0, Bools0, St0) ->
 	    case is_simple(E1) of
 		true ->
 		    Bools = [E1|Bools0],
+            % eqwalizer:ignore - Bools can be not a var?
 		    {icall_eq_true(E1),Eps0,Bools,St1};
 		false ->
 		    {New,St2} = new_var(Lanno, St1),
@@ -542,6 +580,7 @@ gexpr_test(E0, Bools0, St0) ->
 	    end
     end.
 
+-spec icall_eq_true(c() | i()) -> icall().
 icall_eq_true(Arg) ->
     %% We need to recognize a '=:=' added by this pass, so we will add
     %% an extra 'v3_core' annotation. (Being paranoid, we don't want
@@ -558,6 +597,7 @@ icall_eq_true(Arg) ->
 %%  Add necessary is_boolean/1 guard tests to ensure that the guard
 %%  will fail if any of the variables is not a boolean.
 
+-spec force_booleans([cerl:c_var()], c() | i(), [c() | i()], state()) -> {c() | i(), [c() | i()], state()}.
 force_booleans(Vs0, E, Eps, St) ->
     Vs1 = [set_anno(V, []) || V <- Vs0],
 
@@ -569,6 +609,7 @@ force_booleans(Vs0, E, Eps, St) ->
     %% Add is_boolean/1 tests for the remaining variables.
     force_booleans_1(Vs, E, Eps, St).
 
+-spec force_booleans_1([cerl:c_var()], c() | i(), [c() | i()], state()) -> {c() | i(), [c() | i()], state()}.
 force_booleans_1([], E, Eps, St) ->
     {E,Eps,St};
 force_booleans_1([V|Vs], E0, Eps0, St0) ->
@@ -609,12 +650,14 @@ force_booleans_1([V|Vs], E0, Eps0, St0) ->
 %%  way (such expressions are the reason for adding the is_boolean/1
 %%  test in the first place).
 %%
+-spec unforce(c() | i(), [c() | i()], [cerl:c_var()]) -> [cerl:c_var()].
 unforce(_, _, []) ->
     [];
 unforce(E, Eps, Vs) ->
     Tree = unforce_tree(Eps++[E], gb_trees:empty()),
     unforce(Tree, Vs).
 
+-spec unforce_tree([c() | i()], gb_trees:tree(cerl:var_name(), c() | i())) -> c() | i().
 unforce_tree([#iexprs{bodies=Exprs}|Es], D0) ->
     unforce_tree(lists:append(Exprs) ++ Es, D0);
 unforce_tree([#iset{var=#c_var{name=V},arg=Arg0}|Es], D0) ->
@@ -626,6 +669,7 @@ unforce_tree([#icall{}=Call], D) ->
 unforce_tree([#c_var{name=V}], D) ->
     gb_trees:get(V, D).
 
+-spec unforce_tree_subst(c() | i(), gb_trees:tree(cerl:var_name(), c() | i())) -> c() | i().
 unforce_tree_subst(#icall{module=#c_literal{val=erlang},
 			  name=#c_literal{val='=:='},
 			  args=[_Expr,#c_literal{val=Bool}]}=Call, _)
@@ -644,6 +688,7 @@ unforce_tree_subst(#icall{args=Args0}=Call, D) ->
     Call#icall{args=Args};
 unforce_tree_subst(Expr, _) -> Expr.
 
+-spec unforce(c() | i(), [cerl:c_var()]) -> [cerl:c_var()].
 unforce(#icall{module=#c_literal{val=erlang},
 	       name=#c_literal{val=Name},
 	       args=Args}, Vs0) ->
@@ -662,6 +707,7 @@ unforce(_, Vs) -> Vs.
 %% exprs([Expr], State) -> {[Cexpr],State}.
 %%  Flatten top-level exprs.
 
+-spec exprs([erl_parse:abstract_expr() | single_match()], state()) -> {[c() | i()], state()}.
 exprs([E0|Es0], St0) ->
     {E1,Eps,St1} = expr(E0, St0),
     {Es1,St2} = exprs(Es0, St1),
@@ -671,6 +717,7 @@ exprs([], St) -> {[],St}.
 %% exprs([Expr], State) -> {[Cexpr],State}.
 %%  Flatten top-level exprs while handling maybe_match operators.
 
+-spec maybe_match_exprs([erl_parse:abstract_expr()], cerl:c_var(), state()) -> {[c() | i()], state()}.
 maybe_match_exprs([{maybe_match,L,P0,E0}|Es0], Fail, St0) ->
     {Es1,St1} = maybe_match_exprs(Es0, Fail, St0),
     {C,St2} =
@@ -680,7 +727,7 @@ maybe_match_exprs([{maybe_match,L,P0,E0}|Es0], Fail, St0) ->
                 All = {var,L,AllName},
                 clause({clause,L,[{match,L,P0,All}],[],[All]}, StInt);
             [_|_] ->
-                {C0,StInt} = clause({clause,L,[P0],[],[{nil,0}]}, St1),
+                {C0,StInt} = clause({clause,L,[P0],[],[{nil,erl_anno:new(0)}]}, St1),
                 {C0#iclause{body=Es1},StInt}
         end,
     {E1,Eps,St3} = novars(E0, St2),
@@ -699,6 +746,7 @@ maybe_match_exprs([], _Fail, St) ->
 %% expr(Expr, State) -> {Cexpr,[PreExp],State}.
 %%  Generate an internal core expression.
 
+-spec expr(prot_guard() | s_block() | single_match() | erl_parse:abstract_expr(), state()) -> {c() | i(), [c() | i()], state()}.
 expr({var,L,V}, St) -> {#c_var{anno=lineno_anno(L, St),name=V},[],St};
 expr({char,L,C}, St) -> {#c_literal{anno=full_anno(L, St),val=C},[],St};
 expr({integer,L,I}, St) -> {#c_literal{anno=full_anno(L, St),val=I},[],St};
@@ -914,6 +962,7 @@ expr({call,Lc,{atom,Lf,F},As0}, St0) ->
     Op = #c_var{anno=lineno_anno(Lf, St1),name={F,length(As1)}},
     {#iapply{anno=#a{anno=lineno_anno(Lc, St1)},op=Op,args=As1},Aps,St1};
 expr({call,L,FunExp,As0}, St0) ->
+    % eqwalizer:ignore - better occurrence type - try unlimited refinement
     {Fun,Fps,St1} = safe(FunExp, St0),
     {As1,Aps,St2} = safe_list(As0, St1),
     Lanno = lineno_anno(L, St2),
@@ -999,14 +1048,20 @@ expr({op,L,Op,L0,R0}, St0) ->
     {#icall{anno=#a{anno=LineAnno},		%Must have an #a{}
 	    module=#c_literal{anno=LineAnno,val=erlang},
 	    name=#c_literal{anno=LineAnno,val=Op},args=As},Aps,St1};
+% eqwalizer:ignore - executable_line/debug_line
 expr({Op,Loc,Index}, St0) when Op =:= executable_line;
                                Op =:= debug_line ->
     {#iprimop{anno=#a{anno=lineno_anno(Loc, St0)},
               name=#c_literal{val=Op},
               args=[#c_literal{val=Index}]},[],St0};
+% eqwalizer:ignore - ssa_check_when
 expr({ssa_check_when,L,WantedResult,Args,Tag,Clauses}, St) ->
     {#c_opaque{anno=full_anno(L, St),val={ssa_check_when,WantedResult,Tag,Args,Clauses}}, [], St}.
 
+-type s_block() :: {block, erl_anno:anno(), [single_match()]}.
+-type single_match() :: {single_match, erl_anno:anno(), erl_parse:af_pattern(), cerl:c_var()}.
+
+-spec blockify(erl_anno:anno(), folded_pat(), cerl:c_var()) -> [single_match()].
 blockify(L0, {sequential_match,_L1,First,Then}, E) ->
     [{single_match,L0,First,E}|blockify(L0, Then, E)];
 blockify(L, P, E) ->
@@ -1014,6 +1069,7 @@ blockify(L, P, E) ->
 
 %% single_match(Line, AbstractPattern, CoreExpr, State0) -> {Expr,Pre,State}.
 %%  Generate the code for matching an expression against a single pattern.
+-spec single_match(erl_anno:anno(), erl_parse:af_pattern(), c() | i(), state()) -> {imatch(), [i()], state()}.
 single_match(L, P0, E, St0) ->
     {Fpat,St1} = new_var(St0),
     Lanno = lineno_anno(L, St1),
@@ -1049,6 +1105,7 @@ single_match(L, P0, E, St0) ->
             {Expr,Eps0,St3} = force_safe(E, St2),
             SanPat0 = sanitize(P0),
             {SanPat,St} = pattern(SanPat0, St3),
+            % eqwalizer:ignore c() can contain i()
             Badmatch = c_tuple([#c_literal{val=badmatch},Expr]),
             Fail = #iprimop{anno=#a{anno=Lanno},
                             name=#c_literal{val=match_fail},
@@ -1060,6 +1117,7 @@ single_match(L, P0, E, St0) ->
 %% set_wanted(Pattern, St) -> St'.
 %%  Suppress warnings for expressions that are bound to the '_'
 %%  variable and variables that begin with '_'.
+-spec set_wanted(erl_parse:af_pattern(), state()) -> state().
 set_wanted({var,_,'_'}, St) ->
     St#core{wanted=false};
 set_wanted({var,_,Var}, St) ->
@@ -1084,6 +1142,7 @@ set_wanted(_, St) -> St.
 %%
 %%      {{X,Y},[Z]}
 
+-spec sanitize(erl_parse:af_pattern()) -> erl_parse:af_pattern().
 sanitize({match,L,P1,P2}) ->
     {tuple,L,[sanitize(P1),sanitize(P2)]};
 sanitize({cons,L,H,T}) ->
@@ -1101,6 +1160,13 @@ sanitize({op,L,_Name,P1,P2}) ->
     {tuple,L,[sanitize(P1),sanitize(P2)]};
 sanitize(P) -> P.
 
+-spec make_bool_switch(
+    erl_anno:anno(),
+    erl_parse:abstract_expr(),
+    dynamic(), % erl_parse:af_variable()
+    erl_parse:abstract_expr(),
+    erl_parse:abstract_expr()
+) -> erl_parse:af_case().
 make_bool_switch(L, E, V, T, F) ->
     NegL = no_compiler_warning(L),
     Error = {tuple,NegL,[{atom,NegL,badarg},V]},
@@ -1111,6 +1177,12 @@ make_bool_switch(L, E, V, T, F) ->
        [{call,NegL,{remote,NegL,{atom,NegL,erlang},{atom,NegL,error}},
 	 [Error]}]}]}.
 
+-spec expr_map(
+    erl_parse:abstract_expr(),
+    [erl_parse:af_assoc(erl_parse:abstract_expr())],
+    erl_anno:anno(),
+    state()
+) -> {c() | i(), [c() | i()], state()}.
 expr_map(M0, Es0, L, St0) ->
     {M1,Eps0,St1} = safe_map(M0, St0),
     Badmap = badmap_term(M1, St1),
@@ -1132,6 +1204,7 @@ expr_map(M0, Es0, L, St0) ->
     Eps = Eps0 ++ Eps1,
     {#icase{anno=#a{anno=A},args=[],clauses=Cs,fc=Fc},Eps,St2}.
 
+-spec safe_map(erl_parse:abstract_expr(), state()) -> {cerl:c_var() | cerl:c_literal(), [c() | i()], state()}.
 safe_map(M0, St0) ->
     case safe(M0, St0) of
         {#c_var{},_,_}=Res ->
@@ -1144,11 +1217,12 @@ safe_map(M0, St0) ->
             %% it. To avoid the syntax error, force the term into a
             %% variable.
 	    {V,St2} = new_var(St1),
-            Anno = cerl:get_ann(NotMap),
+            Anno = get_anno(NotMap),
             Eps1 = [#iset{anno=#a{anno=Anno},var=V,arg=NotMap}],
 	    {V,Eps0++Eps1,St2}
     end.
 
+-spec badmap_term(cerl:c_var() | cerl:c_literal(), state()) -> cerl:c_literal() | cerl:c_tuple().
 badmap_term(_Map, #core{in_guard=true}) ->
     %% The code generator cannot handle complex error reasons
     %% in guards. But the exact error reason does not matter anyway
@@ -1157,10 +1231,21 @@ badmap_term(_Map, #core{in_guard=true}) ->
 badmap_term(Map, #core{in_guard=false}) ->
     c_tuple([#c_literal{val=badmap},Map]).
 
+-spec map_build_pairs(
+    cerl:c_var() | cerl:c_literal(),
+    [erl_parse:af_assoc(erl_parse:abstract_expr())],
+    list(),
+    state()
+) -> {cerl:c_map() | cerl:c_literal(), dynamic(), dynamic()}.
 map_build_pairs(Map, Es0, Ann, St0) ->
     {Es,Pre,_,St1} = map_build_pairs_1(Es0, sets:new(), St0),
     {ann_c_map(Ann, Map, Es),Pre,St1}.
 
+-spec map_build_pairs_1(
+    [erl_parse:af_assoc(erl_parse:abstract_expr())],
+    sets:set(none()),
+    state()
+) -> {[cerl:c_map_pair()], [c() | i()], sets:set(), state()}.
 map_build_pairs_1([{Op0,L,K0,V0}|Es], Used0, St0) ->
     {K,Pre0,St1} = safe(K0, St0),
     {V,Pre1,St2} = safe(V0, St1),
@@ -1168,15 +1253,24 @@ map_build_pairs_1([{Op0,L,K0,V0}|Es], Used0, St0) ->
     As = lineno_anno(L, St3),
     Op = map_op(Op0),
     {Used2,St4} = maybe_warn_repeated_keys(K, K0, Used1, St3),
+    % eqwalizer:ignore K, V - can be i() | c()
     Pair = cerl:ann_c_map_pair(As, Op, K, V),
     {[Pair|Pairs],Pre0++Pre1++Pre2,Used2,St4};
 map_build_pairs_1([], Used, St) ->
     {[],[],Used,St}.
 
+-spec maybe_warn_repeated_keys(
+    c() | i(),
+    erl_parse:abstract_expr(),
+    sets:set(),
+    state()
+) -> {sets:set(), state()}.
 maybe_warn_repeated_keys(Ck, K0, Used, St) ->
+    % eqwalizer:ignore - i()
     case cerl:is_literal(Ck) of
         false -> {Used,St};
         true ->
+            % eqwalizer:ignore - i()
             K = cerl:concrete(Ck),
             case sets:is_element(K,Used) of
                 true ->
@@ -1187,11 +1281,13 @@ maybe_warn_repeated_keys(Ck, K0, Used, St) ->
             end
     end.
 
+-spec map_op(map_field_assoc | map_field_exact) -> cerl:c_literal().
 map_op(map_field_assoc) -> #c_literal{val=assoc};
 map_op(map_field_exact) -> #c_literal{val=exact}.
 
 %% try_exception([ExcpClause], St) -> {[ExcpVar],Handler,St}.
 
+-spec try_exception([erl_parse:af_clause()], state()) -> {[cerl:c_var()], [icase()], state()}.
 try_exception(Ecs0, St0) ->
     %% Note that Tag is not needed for rethrow - it is already in Info.
     {Evs,St1} = new_vars(3, St0), % Tag, Value, Info
@@ -1210,6 +1306,12 @@ try_exception(Ecs0, St0) ->
     Hs = [#icase{anno=#a{anno=LA},args=[c_tuple(Evs)],clauses=Ecs2,fc=Ec}],
     {Evs,Hs,St2}.
 
+-spec try_after(
+    erl_anno:anno(),
+    [erl_parse:abstract_expr()],
+    [erl_parse:abstract_expr()],
+    state()
+) -> {itry() | iletrec(), [], state()}.
 try_after(Line, Es0, As0, St0) ->
     %% 'try ... after ... end'
     As1 = ta_sanitize_as(As0, Line),
@@ -1231,11 +1333,19 @@ try_after(Line, Es0, As0, St0) ->
 %% 'after' blocks don't have a result, so we match the last expression with '_'
 %% to suppress false "unmatched return" warnings in tools that look at core
 %% Erlang, such as `dialyzer`.
+-spec ta_sanitize_as([erl_parse:abstract_expr()], erl_anno:anno()) -> [erl_parse:abstract_expr()].
 ta_sanitize_as([Expr], Line) ->
     [{match, Line, {var,Line,'_'}, Expr}];
 ta_sanitize_as([Expr | Exprs], Line) ->
     [Expr | ta_sanitize_as(Exprs, Line)].
 
+-spec try_after_large(
+    list(),
+    [c() | i()],
+    [c() | i()],
+    cerl:c_var(),
+    state()
+) -> {iletrec(), [], state()}.
 try_after_large(LA, Es, As, V, St0) ->
     %% Large 'after' block; break it out into a wrapper function to reduce
     %% code size.
@@ -1261,6 +1371,13 @@ try_after_large(LA, Es, As, V, St0) ->
                       body=[Try]},
     {Letrec, [], St}.
 
+-spec try_after_small(
+    list(),
+    [c() | i()],
+    [c() | i()],
+    cerl:c_var(),
+    state()
+) -> {itry(), [], state()}.
 try_after_small(LA, Es, As, V, St0)  ->
     %% Small 'after' block; inline it.
     Lanno = #a{anno=LA},
@@ -1270,6 +1387,7 @@ try_after_small(LA, Es, As, V, St0)  ->
                 evars=Evs,handler=Hs},
     {Try, [], St1}.
 
+-spec after_block([c() | i()], state()) -> {[cerl:c_var()], [icase()], state()}.
 after_block(As, St0) ->
     %% See above.
     {Evs, St1} = new_vars(3, St0),              % Tag, Value, Info
@@ -1283,6 +1401,7 @@ after_block(As, St0) ->
     Hs = [#icase{anno=#a{},args=[c_tuple(Evs)],clauses=[],fc=Ec}],
     {Evs, Hs, St1}.
 
+-spec try_build_stacktrace([iclause()], cerl:c_var()) -> [iclause()].
 try_build_stacktrace([#iclause{pats=Ps0,body=B0}=C0|Cs], RawStk) ->
     [#c_tuple{es=[Class,Exc,Stk]}=Tup] = Ps0,
     case Stk of
@@ -1306,9 +1425,11 @@ try_build_stacktrace([], _) -> [].
 %%  Determines whether a list of expressions is "smaller" than the given
 %%  threshold. This is largely analogous to cerl_trees:size/1 but operates on
 %%  our internal #iexprs{} and bails out as soon as the threshold is exceeded.
+-spec is_iexprs_small([c() | i()], integer()) -> boolean().
 is_iexprs_small(Exprs, Threshold) ->
     0 < is_iexprs_small_1(Exprs, Threshold).
 
+-spec is_iexprs_small_1([c() | i()], integer()) -> integer().
 is_iexprs_small_1(_, 0) ->
     0;
 is_iexprs_small_1([], Threshold) ->
@@ -1317,6 +1438,7 @@ is_iexprs_small_1([Expr | Exprs], Threshold0) ->
     Threshold = is_iexprs_small_2(Expr, Threshold0 - 1),
     is_iexprs_small_1(Exprs, Threshold).
 
+-spec is_iexprs_small_2(c() | i(), integer()) -> integer().
 is_iexprs_small_2(#iclause{guard=Guards,body=Body}, Threshold0) ->
     Threshold = is_iexprs_small_1(Guards, Threshold0),
     is_iexprs_small_1(Body, Threshold);
@@ -1349,6 +1471,11 @@ is_iexprs_small_2(_, Threshold) ->
 %%  Note that ibinary needs to have its annotation wrapped in a #a{}
 %%  record whereas c_literal should not have a wrapped annotation
 
+-spec expr_bin(
+    [erl_parse:af_binelement(erl_parse:abstract_expr())],
+    list(),
+    state()
+) -> {c() | i(), [c() | i()], state()}.
 expr_bin(Es0, Anno, St0) ->
     Es1 = bin_elements(Es0, 1),
     case constant_bin(Es1) of
@@ -1364,6 +1491,7 @@ expr_bin(Es0, Anno, St0) ->
 	    {#c_literal{anno=Anno,val=Bin},[],St0}
     end.
 
+-spec expr_bin_1([sl_binelement(erl_parse:abstract_expr())], state()) -> {[cerl:c_bitstr()], [c() | i()], state()}.
 expr_bin_1(Es, St0) ->
     Res = foldr(fun (E, {Ces,Eps0,S0}) ->
                         try bitstr(E, S0) of
@@ -1383,6 +1511,10 @@ expr_bin_1(Es, St0) ->
             Res
     end.
 
+-spec bitstrs(
+    [sl_binelement(erl_parse:abstract_expr())],
+    state()
+) -> {[cerl:c_bitstr()], [c() | i()], state()}.
 bitstrs([E0|Es0], St0) ->
     {E,Eps0,St1} = bitstr(E0, St0),
     {Es,Eps1,St2} = bitstrs(Es0, St1),
@@ -1390,6 +1522,7 @@ bitstrs([E0|Es0], St0) ->
 bitstrs([], St) ->
     {[],[],St}.
 
+-spec bitstr(sl_binelement(erl_parse:abstract_expr()), state()) -> {[cerl:c_bitstr()], [c() | i()], state()}.
 bitstr({bin_element,{sl,_,Line},{string,_,S},{integer,_,8},_}, St) ->
     bitstrs(bin_expand_string(S, {sl,0,Line}, 0, 0, []), St);
 bitstr({bin_element,{sl,_,Line},{string,_,[]},Sz0,Ts}, St0) ->
@@ -1465,21 +1598,40 @@ bitstr({bin_element,{sl,Seg,Line},E0,Size0,[Type,{unit,Unit}|Flags]}, St0) ->
            end,
 
     {[#c_bitstr{anno=Anno,
+                % eqwalizer:ignore - c() | i()
                 val=E1,size=Size1,
                 unit=#c_literal{val=Unit},
                 type=#c_literal{val=Type},
                 flags=#c_literal{val=Flags}}],
      Eps,St2}.
 
+-type sl() :: {sl, integer(), erl_anno:anno()}.
+-type sl_binelement(T) :: {bin_element,
+                           sl(),
+                           T,
+                           erl_parse:abstract_expr(),
+                           [erl_parse:type_specifier()]}.
+
+-spec bin_elements(
+    [erl_parse:af_binelement(erl_parse:abstract_expr())],
+    integer()
+) -> [sl_binelement(erl_parse:abstract_expr())].
 bin_elements([{bin_element,Line,Expr,Size0,Type0}|Es], Seg) ->
     {Size,Type} = make_bit_type(Line, Size0, Type0, construction),
     [{bin_element,{sl,Seg,Line},Expr,Size,Type}|bin_elements(Es, Seg+1)];
 bin_elements([], _) -> [].
 
+-spec make_bit_type(
+    erl_anno:anno(),
+    erl_parse:af_binelement_size(),
+    erl_parse:type_specifier_list(),
+    construction | matching
+) -> {erl_parse:abstract_expr(), [erl_parse:type_specifier()]}.
 make_bit_type(Line, default, Type0, _Context) ->
     case erl_bits:set_bit_type(default, Type0) of
         {ok,all,Bt} -> {make_all_size(Line),erl_bits:as_list(Bt)};
 	{ok,undefined,Bt} -> {{atom,Line,undefined},erl_bits:as_list(Bt)};
+        % eqwalizer:fixme
         {ok,Size,Bt} -> {{integer,Line,Size},erl_bits:as_list(Bt)}
     end;
 make_bit_type(_Line, {atom,Anno,all}=Size, Type0, Context) ->
@@ -1506,8 +1658,10 @@ make_bit_type(_Line, Size0, Type0, _Context) ->
                {char,Anno,CharVal} -> {integer,Anno,CharVal};
                _ -> Size1
            end,
+    % eqwalizer:fixme
     {Size,erl_bits:as_list(Bt)}.
 
+-spec make_all_size(erl_anno:anno()) -> erl_parse:af_atom().
 make_all_size(Line) ->
     Anno = erl_anno:set_generated(true, Line),
     {atom,Anno,all}.
@@ -1518,6 +1672,7 @@ make_all_size(Line) ->
 %%  become huge (such as <<0:100000000>>), evaluate and return the binary;
 %%  otherwise return 'error'.
 
+-spec constant_bin([sl_binelement(erl_parse:abstract_expr())]) -> binary() | error.
 constant_bin(Es) ->
     try
 	constant_bin_1(Es)
@@ -1525,6 +1680,7 @@ constant_bin(Es) ->
 	error -> error
     end.
 
+-spec constant_bin_1([sl_binelement(erl_parse:abstract_expr())]) -> binary() | error.
 constant_bin_1(Es) ->
     verify_suitable_fields(Es),
     EmptyBindings = erl_eval:new_bindings(),
@@ -1543,6 +1699,7 @@ constant_bin_1(Es) ->
 
 %% verify_suitable_fields([{bin_element,_,Sz,Opts}=E|Es]) ->
 
+-spec verify_suitable_fields([sl_binelement(erl_parse:abstract_expr())]) -> ok.
 verify_suitable_fields([{bin_element,_,Val,SzTerm,Opts}|Es]) ->
     case member(big, Opts) orelse member(little, Opts) of
 	true -> ok;
@@ -1586,12 +1743,21 @@ verify_suitable_fields([]) -> ok.
 %% Count the number of bits approximately needed to store Int.
 %% (We don't need an exact result for this purpose.)
 
+-spec count_bits(integer()) -> integer().
 count_bits(Int) when is_integer(Int) ->
     count_bits_1(abs(Int), 64).
 
+-spec count_bits_1(integer(), integer()) -> integer().
 count_bits_1(0, Bits) -> Bits;
 count_bits_1(Int, Bits) -> count_bits_1(Int bsr 64, Bits+64).
 
+-spec bin_expand_string(
+    string(),
+    sl(),
+    integer(),
+    integer(),
+    [sl_binelement(erl_parse:abstract_expr())]
+) -> [sl_binelement(erl_parse:abstract_expr())].
 bin_expand_string(S, Line, Val, Size, Last) when Size >= ?COLLAPSE_MAX_SIZE_SEGMENT ->
     Combined = make_combined(Line, Val, Size),
     [Combined|bin_expand_string(S, Line, 0, 0, Last)];
@@ -1600,6 +1766,7 @@ bin_expand_string([H|T], Line, Val, Size, Last) ->
 bin_expand_string([], Line, Val, Size, Last) ->
     [make_combined(Line, Val, Size) | Last].
 
+-spec make_combined(sl(), integer(), integer()) -> sl_binelement(erl_parse:abstract_expr()).
 make_combined(SegLine, Val, Size) ->
     Line = case SegLine of
                {sl,_,Line0} -> Line0;
@@ -1611,6 +1778,12 @@ make_combined(SegLine, Val, Size) ->
 
 %% fun_tq(Id, [Clauses], Line, State, NameInfo) -> {Fun,[PreExp],State}.
 
+-spec fun_tq(
+    [erl_parse:af_clause()],
+    erl_anno:anno(),
+    state(),
+    {named, atom()} | unnamed
+) -> {ifun(), [c() | i()], state()}.
 fun_tq(Cs0, L, St0, NameInfo) ->
     {Cs1,Anno0} = handle_debug_line(Cs0, St0),
     Arity = clause_arity(hd(Cs1)),
@@ -1629,6 +1802,13 @@ fun_tq(Cs0, L, St0, NameInfo) ->
 %% lc_tq(Line, Exp, [Qualifier], Mc, State) -> {LetRec,[PreExp],State}.
 %%  This TQ from Simon PJ pp 127-138.
 
+-spec lc_tq(
+    erl_anno:anno(),
+    erl_parse:abstract_expr(),
+    [izip() | ifilter() | igen()],
+    c() | i(),
+    state()
+) -> {c() | i(), [c() | i()], state()}.
 lc_tq(Line, E, [#igen{}|_T] = Qs, Mc, St) ->
     lc_tq1(Line, E, Qs, Mc, St);
 lc_tq(Line, E, [#izip{}=Zip|Qs], Mc, St) ->
@@ -1639,9 +1819,17 @@ lc_tq(Line, E0, [], Mc0, St0) ->
     {H1,Hps,St1} = safe(E0, St0),
     {T1,Tps,St} = force_safe(Mc0, St1),
     Anno = lineno_anno(Line, St),
+    % eqwalizer:ignore - c() can contain i()
     E = ann_c_cons(Anno, H1, T1),
     {set_anno(E, [compiler_generated|Anno]),Hps ++ Tps,St}.
 
+-spec lc_tq1(
+    erl_anno:anno(),
+    erl_parse:abstract_expr(),
+    [izip() | ifilter() | igen()],
+    c() | i(),
+    state()
+) -> {c() | i(), [c() | i()], state()}.
 lc_tq1(Line, E, [#igen{anno=#a{anno=GA}=GAnno,
 		      acc_pat=AccPat,acc_guard=AccGuard,
                       nomatch_pat=NomatchPat,
@@ -1695,6 +1883,14 @@ lc_tq1(Line, E, [#igen{anno=#a{anno=GA}=GAnno,
      [],St3}.
 
 %% zip_tq(Line, Exp, [Qualifier], Mc, State, TqFun) -> {LetRec,[PreExp],State}.
+-spec zip_tq(
+    erl_anno:anno(),
+    erl_parse:abstract_expr(),
+    izip(),
+    c() | i(),
+    state(),
+    [izip() | ifilter() | igen()]
+) -> {iletrec(), [c() | i()], state()}.
 zip_tq(Line, E, #izip{anno=#a{anno=GA}=GAnno,
                       acc_pats=AccPats,acc_guard=AccGuard,
                       nomatch_total=NomatchTotal,
@@ -2003,9 +2199,19 @@ filter_tq(Line, E, #ifilter{anno=#a{anno=LA}=LAnno,arg=Guard},
 %%  tests and try to fold them together and join to a preceding generators, this
 %%  should give us better and more compact code.
 
+-spec preprocess_quals(
+    erl_anno:anno(), [erl_parse:af_qualifier()], state()
+) -> {[izip() | ifilter() | igen()], state()}.
 preprocess_quals(Line, Qs, St) ->
     preprocess_quals(Line, Qs, [], St, []).
 
+-spec preprocess_quals(
+    erl_anno:anno(),
+    [erl_parse:af_qualifier()],
+    [cerl:var_name()],
+    state(),
+    [izip() | ifilter() | igen()]
+) -> {[izip() | ifilter() | igen()], state()}.
 preprocess_quals(Line, [{zip,Anno,Gens}|Qs], [], St, Acc) ->
     LAnno = #a{anno=lineno_anno(Anno, St)},
     StrictPats = get_strict_patterns(Gens, {Line, St}, []),
@@ -2049,6 +2255,7 @@ preprocess_quals(Line, [Q|Qs0], StrictPats, St0, Acc) ->
                 false ->
                     %% Otherwise, it is a pair {Pre,Arg} as in a generator
                     %% input.
+                    % eqwalizer:ignore - case is_generator ...
                     {Ce,Pre,St} = novars(Q, St0),
                     Filter = #ifilter{anno=LAnno,arg={Pre,Ce}},
                     preprocess_quals(Line, Qs0, StrictPats, St, [Filter|Acc])
@@ -2090,6 +2297,7 @@ get_nomatch_total(NomatchModes) ->
             end
         end.
 
+-spec is_generator(erl_parse:af_qualifier()) -> boolean().
 is_generator({generate,_,_,_}) -> true;
 is_generator({generate_strict,_,_,_}) -> true;
 is_generator({b_generate,_,_,_}) -> true;
@@ -2100,6 +2308,11 @@ is_generator(_) -> false.
 
 %% Find all patterns in strict generators within a zip generator, so that they
 %% can be matched in the relaxed generators of the same zip generator.
+-spec get_strict_patterns(
+    [erl_parse:af_generator()],
+    {erl_anno:anno(), state()},
+    [cerl:var_name()]
+) -> [cerl:var_name()].
 get_strict_patterns([{generate_strict,_Lg,P0,_E}|Gs], {Line, St0}, Acc) ->
     {Pat,St1} = list_gen_pattern(P0, Line, St0),
     Vars = lit_vars(Pat),
@@ -2484,11 +2697,13 @@ is_guard_test(E) ->
 %%  Generate a novars expression, basically a call or a safe.  At this
 %%  level we do not need to do a deep check.
 
+-spec novars(erl_parse:abstract_expr(), state()) -> {c() | i(), [c() | i()], state()}.
 novars(E0, St0) ->
     {E1,Eps,St1} = expr(E0, St0),
     {Se,Sps,St2} = force_novars(E1, St1),
     {Se,Eps ++ Sps,St2}.
 
+-spec force_novars(c() | i(), state()) -> {c() | i(), [c() | i()], state()}.
 force_novars(#iapply{}=App, St) -> {App,[],St};
 force_novars(#icall{}=Call, St) -> {Call,[],St};
 force_novars(#ifun{}=Fun, St) -> {Fun,[],St};	%These are novars too
@@ -2529,11 +2744,13 @@ safe_list(Es, St0) ->
 %%  binaries which can fail.  At this level we do not need to do a
 %%  deep check.  Must do special things with matches here.
 
+-spec safe(erl_parse:abstract_expr(), state()) -> {c() | i(), [c() | i()], state()}.
 safe(E0, St0) ->
     {E1,Eps,St1} = expr(E0, St0),
     {Se,Sps,St2} = force_safe(E1, St1),
     {Se,Eps ++ Sps,St2}.
 
+-spec force_safe(c() | i(), state()) -> {c() | i(), [imatch() | iset()], state()}.
 force_safe(#imatch{pat=P,arg=E}=Imatch, St0) ->
     {Le,Lps0,St1} = force_safe(E, St0),
     Lps = Lps0 ++ [Imatch#imatch{arg=Le}],
@@ -2579,6 +2796,11 @@ is_safe(_) -> false.
 %% fold_match(MatchExpr, Pat) -> {MatchPat,Expr}.
 %%  Fold nested matches into one match with aliased patterns.
 
+-type folded_pat() ::
+    erl_parse:af_pattern()
+   | {sequential_match, erl_anno:anno(), erl_parse:af_pattern(), folded_pat()}.
+
+-spec fold_match(erl_parse:abstract_expr(), folded_pat()) -> {folded_pat(), erl_parse:abstract_expr()}.
 fold_match({match, L, P, E}, E0) ->
     fold_match(E, {sequential_match, L, P, E0});
 fold_match(E, E0) ->
@@ -2588,6 +2810,7 @@ fold_match(E, E0) ->
 %%  Transform a pattern by removing line numbers.  We also normalise
 %%  aliases in patterns to standard form: {alias,Pat,[Var]}.
 
+-spec pattern(erl_parse:af_pattern(), state()) -> {c() | imap() | ibinary(), state()}.
 pattern({var,L,V}, St) -> {#c_var{anno=lineno_anno(L, St),name=V},St};
 pattern({char,L,C}, St) -> {#c_literal{anno=lineno_anno(L, St),val=C},St};
 pattern({integer,L,I}, St) -> {#c_literal{anno=lineno_anno(L, St),val=I},St};
@@ -2808,6 +3031,7 @@ pat_alias_list(_, _) -> throw(nomatch).
 
 %% pattern_list([P], State) -> {[P],Exprs,St}
 
+-spec pattern_list([erl_parse:af_pattern()], state()) -> {[c() | imap() | ibinary()], state()}.
 pattern_list([P0|Ps0], St0) ->
     {P1,St1} = pattern(P0, St0),
     {Ps1,St2} = pattern_list(Ps0, St1),
@@ -2820,8 +3044,10 @@ string_to_conses(Line, Cs, Tail) ->
 
 %% make_vars([Name]) -> [{Var,Name}].
 
+-spec make_vars([cerl:var_name()]) -> [cerl:c_var()].
 make_vars(Vs) -> [ #c_var{name=V} || V <- Vs ].
 
+-spec new_fun_name(state()) -> {atom(), state()}.
 new_fun_name(#core{function={F,A},fcount=I}=St) when is_integer(I) ->
     Name = "-" ++ atom_to_list(F) ++ "/" ++ integer_to_list(A)
         ++ "-fun-" ++ integer_to_list(I) ++ "-",
@@ -2840,9 +3066,11 @@ new_var_name(#core{vcount=C}=St) when is_integer(C) ->
 %% new_var(State) -> {{var,Name},State}.
 %% new_var(LineAnno, State) -> {{var,Name},State}.
 
+-spec new_var(state()) -> {cerl:c_var(), state()}.
 new_var(St) ->
     new_var([], St).
 
+-spec new_var(Anno :: list(), St0 :: state()) -> {cerl:c_var(), state()}.
 new_var(Anno, St0) when is_list(Anno) ->
     {New,St} = new_var_name(St0),
     {#c_var{anno=Anno,name=New},St}.
@@ -2851,9 +3079,11 @@ new_var(Anno, St0) when is_list(Anno) ->
 %% new_vars(Anno, Count, State) -> {[Var],State}.
 %%  Make Count new variables.
 
+-spec new_vars(integer(), state()) -> {[cerl:c_var()], state()}.
 new_vars(N, St) -> new_vars_1(N, [], St, []).
 new_vars(Anno, N, St) -> new_vars_1(N, Anno, St, []).
 
+-spec new_vars_1(N :: integer(), Anno :: list(), St0 :: state(), Vs :: [cerl:c_var()]) -> {[cerl:c_var()], state()}.
 new_vars_1(N, Anno, St0, Vs) when N > 0 ->
     {V,St1} = new_var(Anno, St0),
     new_vars_1(N-1, Anno, St1, [V|Vs]);
@@ -2893,6 +3123,10 @@ fail_clause(Pats, Anno, Arg) ->
 			    args=[Arg]}]}.
 
 %% Optimization for Dialyzer.
+-spec right_assoc(
+    erl_parse:af_binary_op(erl_parse:abstract_expr()), 
+    Op :: 'andalso' | 'orelse'
+) -> erl_parse:af_binary_op(erl_parse:abstract_expr()).
 right_assoc({op,L1,Op,{op,L2,Op,E1,E2},E3}, Op) ->
     right_assoc({op,L2,Op,E1,{op,L1,Op,E2,E3}}, Op);
 right_assoc(E, _Op) -> E.
@@ -2902,6 +3136,7 @@ annotate_tuple(A, Es, #core{dialyzer=Dialyzer}) ->
         true ->
             %% Do not coalesce constant tuple elements. A Hack.
             Node = cerl:ann_c_tuple(A, [cerl:c_var(any)]),
+            % eqwalizer:ignore Node :: cerl:c_tuple() - because of non-literal args
             cerl:update_c_tuple_skel(Node, Es);
         false ->
             ann_c_tuple(A, Es)
@@ -2997,7 +3232,9 @@ annotate_cons(A, H, T, #core{dialyzer=Dialyzer}) ->
 %%%
 
 -record(known, {base=[],ks=[],prev_ks=[]}).
+-type known() :: #known{}.
 
+-spec known_init() -> known().
 known_init() ->
     #known{}.
 
@@ -3076,6 +3313,7 @@ known_in_fun(#known{ks=Ks0}=K, Name) ->
 %%% End of abstract data type for known variables.
 %%%
 
+-spec ubody(ifun(), state()) -> {i() | c(), state()}.
 ubody(B, St) -> uexpr(B, known_init(), St).
 
 %% ufun_clauses([Lclause], [KnownVar], State) -> {[Lclause],State}.
@@ -3309,6 +3547,7 @@ mark_compiler_generated(#c_var{anno=A}=Var) ->
 mark_compiler_generated(#c_literal{anno=A}=Lit) ->
     Lit#c_literal{anno=[compiler_generated|A]}.
 
+-spec uexpr(i() | c(), known() | none, state()) -> {i() | c(), state()}.
 uexpr(#iset{anno=A,var=V,arg=A0}, Ks, St0) ->
     {A1,St1} = uexpr(A0, Ks, St0),
     {#iset{anno=A#a{us=del_element(V#c_var.name, (get_anno(A1))#a.us),
@@ -3412,6 +3651,7 @@ uexpr(Simple, _, St) ->
     true = is_simple(Simple),			%Sanity check!
     Vs = lit_vars(Simple),
     Anno = get_anno(Simple),
+    % eqwalizer:ignore - true = is_simple
     {#isimple{anno=#a{us=Vs,anno=Anno},term=Simple},St}.
 
 uexpr_list(Les0, Ks, St0) ->
@@ -3672,6 +3912,7 @@ ren_is_subst(_V, []) -> no.
 %% from case/receive.  In subblocks/clauses the AfterVars of the block
 %% are just the exported variables.
 
+-spec cbody(c() | i(), none | sets:set(), state()) -> {c(), state()}.
 cbody(B0, none, St0) ->
     {B1,_,_,St1} = cexpr(B0, [], St0),
     {B1,St1};
@@ -3683,6 +3924,7 @@ cbody(B0, Nifs, St0) ->
                  Body1 = #c_seq{arg=#c_primop{name=#c_literal{val=nif_start},
                                               args=[]},
                                 body=Body0},
+                 % eqwalizer:fixme - see #c_fun{body=Body0} = B1 above
                  B1#c_fun{body=Body1};
              false ->
                  B1
@@ -3774,6 +4016,7 @@ cexprs([Le|Les], As0, St0) ->
 
 %% cexpr(Lexpr, [AfterVar], State) -> {Cexpr,[ExpVar],[UsedVar],State}.
 
+-spec cexpr(i() | c(), [], state()) -> {c(), [cerl:var_name()], [cerl:var_name()], state()}.
 cexpr(#iletrec{anno=A,defs=Fs0,body=B0}, As, St0) ->
     {Fs1,{_,St1}} = mapfoldl(fun ({{_Name,_Arity}=NA,F0}, {Used,S0}) ->
 				     {F1,[],Us,S1} = cexpr(F0, [], S0),
@@ -3981,11 +4224,13 @@ c_add_dummy_export(C, [], St) ->
 %%%           in  apply 'recv$^0'/0()
 %%%           -| ['letrec_goto'] )
 
+-spec lbody(c(), state()) -> {c(), state()}.
 lbody(B, St) ->
     cerl_trees:mapfold(fun skip_lowering/2, fun lexpr/2, St, B).
 
 %% These nodes do not have case or receive within them,
 %% so we can speed up lowering by not traversing them.
+-spec skip_lowering(c(), state()) -> {c(), state()} | skip.
 skip_lowering(#c_binary{}, _A) -> skip;
 skip_lowering(#c_call{}, _A) -> skip;
 skip_lowering(#c_cons{}, _A) -> skip;
@@ -3996,6 +4241,7 @@ skip_lowering(#c_primop{}, _A) -> skip;
 skip_lowering(#c_tuple{}, _A) -> skip;
 skip_lowering(T, A) -> {T, A}.
 
+-spec lexpr(c(), state()) -> {c(), state()}.
 lexpr(#c_case{}=Case, St) ->
     %% Split patterns that bind and use the same variable.
     split_case(Case, St);
@@ -4114,17 +4360,21 @@ lexpr(#c_receive{anno=RecvAnno,clauses=Cs0,timeout=Timeout0,action=Action}, St0)
 lexpr(Tree, St) ->
     {Tree,St}.
 
+-spec rewrite_cs([cerl:c_clause()]) -> [cerl:c_clause()].
 rewrite_cs([#c_clause{body=B0}=C|Cs]) ->
     B = #c_seq{arg=primop(remove_message),body=B0},
     [C#c_clause{body=B}|rewrite_cs(Cs)];
 rewrite_cs([]) -> [].
 
+-spec primop(atom()) -> cerl:c_primop().
 primop(Name) ->
     primop(Name, []).
 
+-spec primop(atom(), [cerl:cerl()]) -> cerl:c_primop().
 primop(Name, Args) ->
     primop(Name, Args, []).
 
+-spec primop(atom(), [cerl:cerl()], []) -> cerl:c_primop().
 primop(Name, Args, Anno) ->
     #c_primop{anno=Anno,name=#c_literal{val=Name},args=Args}.
 
@@ -4200,6 +4450,7 @@ split_clauses([C0|Cs0], Args, CaseAnno, St0) ->
 split_clauses([], _, _, _) ->
     none.
 
+-spec goto_func(integer()) -> {atom(), integer()}.
 goto_func(Count) ->
     {list_to_atom("label^" ++ integer_to_list(Count)),0}.
 
@@ -4485,6 +4736,7 @@ split_bin_unit_1([#c_bitstr{type=#c_literal{val=Type},size=Size,
     split_bin_unit_1(Ss, gcd(GCU, Bits));
 split_bin_unit_1([], GCU) -> GCU.
 
+-spec gcd(integer(), integer()) -> integer().
 gcd(A, B) ->
     case A rem B of
         0 -> B;
@@ -4493,8 +4745,10 @@ gcd(A, B) ->
 
 %% lit_vars(Literal) -> [Var].
 
+-spec lit_vars(term()) -> ordsets:ordset(cerl:var_name()).
 lit_vars(Lit) -> lit_vars(Lit, []).
 
+-spec lit_vars(term(), ordsets:ordset(cerl:var_name())) -> ordsets:ordset(cerl:var_name()).
 lit_vars(#c_cons{hd=H,tl=T}, Vs) -> lit_vars(H, lit_vars(T, Vs));
 lit_vars(#c_tuple{es=Es}, Vs) -> lit_list_vars(Es, Vs);
 lit_vars(#c_map{arg=V,es=Es}, Vs) -> lit_vars(V, lit_list_vars(Es, Vs));
@@ -4504,27 +4758,34 @@ lit_vars(#imap{es=Es}, Vs) -> lit_list_vars(Es, Vs);
 lit_vars(#imappair{key=K,val=V}, Vs) -> lit_list_vars(K, lit_vars(V, Vs));
 lit_vars(_, Vs) -> Vs.				%These are atomic
 
+-spec lit_list_vars([term()]) -> ordsets:ordset(cerl:var_name()).
 lit_list_vars(Ls) -> lit_list_vars(Ls, []).
 
+-spec lit_list_vars([term()], ordsets:ordset(cerl:var_name())) -> ordsets:ordset(cerl:var_name()).
 lit_list_vars(Ls, Vs) ->
     foldl(fun (L, Vs0) -> lit_vars(L, Vs0) end, Vs, Ls).
 
+-spec bitstr_vars([cerl:c_bitstr()]) -> ordsets:ordset(cerl:var_name()).
 bitstr_vars(Segs) ->
     bitstr_vars(Segs, []).
 
+-spec bitstr_vars([cerl:c_bitstr()], ordsets:ordset(cerl:var_name())) -> ordsets:ordset(cerl:var_name()).
 bitstr_vars(Segs, Vs) ->
     foldl(fun (#c_bitstr{val=V,size=S}, Vs0) ->
  		  lit_vars(V, lit_vars(S, Vs0))
 	  end, Vs, Segs).
 
+-spec ibitstr_vars([ibitstr()]) -> ordsets:ordset(cerl:var_name()).
 ibitstr_vars(Segs) ->
     ibitstr_vars(Segs, []).
 
+-spec ibitstr_vars([ibitstr()], ordsets:ordset(cerl:var_name())) -> ordsets:ordset(cerl:var_name()).
 ibitstr_vars(Segs, Vs) ->
     foldl(fun (#ibitstr{val=V,size=S}, Vs0) ->
           lit_vars(V, lit_vars(S, Vs0))
       end, Vs, Segs).
 
+-spec record_anno(erl_anno:anno(), state()) -> list().
 record_anno(L, #core{dialyzer=Dialyzer}=St) ->
     case erl_anno:record(L) andalso Dialyzer of
         true ->
@@ -4533,38 +4794,43 @@ record_anno(L, #core{dialyzer=Dialyzer}=St) ->
             full_anno(L, St)
     end.
 
+-spec full_anno(erl_anno:anno(), state()) -> list().
 full_anno(L, #core{wanted=false}=St) ->
     [result_not_wanted|lineno_anno(L, St)];
 full_anno(L, #core{wanted=true}=St) ->
     lineno_anno(L, St).
 
+-spec lineno_anno(erl_anno:anno(), state()) -> list().
 lineno_anno(L, St) ->
     Location = erl_anno:location(L),
     Generated = erl_anno:generated(L),
     CompilerGenerated = [compiler_generated || Generated],
     [Location] ++ St#core.file ++ CompilerGenerated.
 
+-spec get_lineno_anno(c() | i()) -> list().
 get_lineno_anno(Ce) ->
     case get_anno(Ce) of
 	#a{anno=A} -> A;
 	A when is_list(A) -> A
     end.
 
+-spec no_compiler_warning(erl_anno:anno()) -> erl_anno:anno().
 no_compiler_warning(Anno) ->
     erl_anno:set_generated(true, Anno).
 
 %%
 %% The following three functions are used both with cerl:cerl() and with i()'s
 %%
--spec get_anno(cerl:cerl() | i()) -> term().
+-spec get_anno(c() | i()) -> dynamic().
 
 get_anno(C) -> element(2, C).
 
--spec set_anno(cerl:cerl() | i(), term()) -> cerl:cerl().
+-spec set_anno(E, dynamic()) -> E.
+set_anno(C, A) ->
+    % eqwalizer:ignore - not exressible via types
+    setelement(2, C, A).
 
-set_anno(C, A) -> setelement(2, C, A).
-
--spec is_simple(cerl:cerl() | i()) -> boolean().
+-spec is_simple(c() | i()) -> boolean().
 
 is_simple(#c_var{}) -> true;
 is_simple(#c_literal{}) -> true;
@@ -4576,10 +4842,11 @@ is_simple(#c_map_pair{key=K,val=V}) ->
     is_simple(K) andalso is_simple(V);
 is_simple(_) -> false.
 
--spec is_simple_list([cerl:cerl()]) -> boolean().
+-spec is_simple_list([c()]) -> boolean().
 
 is_simple_list(Es) -> all(fun is_simple/1, Es).
 
+-spec insert_nif_start([{cerl:c_var(), c()}]) -> [{cerl:c_var(), cerl:c_fun()}].
 insert_nif_start([VF={V,F=#c_fun{body=Body}}|Funs]) ->
     case Body of
         #c_seq{arg=#c_primop{name=#c_literal{val=nif_start}}} ->
@@ -4604,7 +4871,7 @@ insert_nif_start([]) ->
 -type err_desc() :: {'failed' | 'nomatch' | 'ignored', term()} |
                     {'map_key_repeated',term()}.
 
--spec format_error(err_desc()) -> nonempty_string().
+-spec format_error(err_desc()) -> io_lib:chars().
 
 format_error({nomatch,pattern}) ->
     "pattern cannot possibly match";
@@ -4619,6 +4886,7 @@ format_error({map_key_repeated,Key}) ->
             io_lib:format("key ~p will be overridden in expression", [Key])
     end.
 
+-spec add_warning(Anno :: erl_anno:anno(), Term :: dynamic(), state()) -> state().
 add_warning(Anno, Term, #core{ws=Ws,file=[{file,File}]}=St) ->
     case erl_anno:generated(Anno) of
         false ->
