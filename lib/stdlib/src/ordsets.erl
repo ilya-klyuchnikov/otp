@@ -337,9 +337,9 @@ elements that are present in both sets.
 ```
 """.
 -spec intersection(Ordset1, Ordset2) -> Ordset3 when
-      Ordset1 :: ordset(_),
-      Ordset2 :: ordset(_),
-      Ordset3 :: ordset(_).
+      Ordset1 :: ordset(A),
+      Ordset2 :: ordset(A),
+      Ordset3 :: ordset(A).
 
 intersection([E1|Es1], [E2|_]=Set2) when E1 < E2 ->
     intersection(Es1, Set2);
