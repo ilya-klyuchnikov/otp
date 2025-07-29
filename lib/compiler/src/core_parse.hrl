@@ -50,13 +50,13 @@
 		 args :: [cerl:cerl()]}).
 
 -record(c_case, {anno=[] :: list(), arg :: cerl:cerl(),
-		 clauses :: [cerl:cerl()]}).
+		 clauses :: [cerl:c_clause()]}).
 
 -record(c_catch, {anno=[] :: list(), body :: cerl:cerl()}).
 
 -record(c_clause, {anno=[] :: list(), pats :: [cerl:cerl()],
 		   guard :: cerl:cerl(),
-		   body :: cerl:cerl() | any()}). % TODO
+		   body :: cerl:cerl()}). % TODO
 
 -record(c_cons, {anno=[] :: list(), hd :: cerl:cerl(),
 		 tl :: cerl:cerl()}).
@@ -69,10 +69,10 @@
 		body :: cerl:cerl()}).
 
 -record(c_letrec, {anno=[] :: list(),
-                   defs :: [{cerl:cerl(), cerl:cerl()}],
+                   defs :: [{cerl:c_var(), cerl:cerl()}],
 		   body :: cerl:cerl()}).
 
--record(c_literal, {anno=[] :: list(), val :: any()}).
+-record(c_literal, {anno=[] :: list(), val :: dynamic()}).
 
 -record(c_map, {anno=[] :: list(),
 		arg=#c_literal{val=#{}} :: cerl:c_var() | cerl:c_literal(),
@@ -81,8 +81,8 @@
 
 -record(c_map_pair, {anno=[] :: list(),
 	             op :: #c_literal{val::'assoc'} | #c_literal{val::'exact'},
-		     key :: any(),              % TODO
-		     val :: any()}).            % TODO
+		     key :: cerl:cerl(),              % TODO
+		     val :: dynamic()}).            % TODO
 
 -record(c_module, {anno=[] :: list(), name :: cerl:c_literal(),
 		   exports :: [cerl:cerl()],
@@ -94,7 +94,7 @@
 -record(c_primop, {anno=[] :: list(), name :: cerl:cerl(),
 		   args :: [cerl:cerl()]}).
 
--record(c_receive, {anno=[] :: list(), clauses :: [cerl:cerl()],
+-record(c_receive, {anno=[] :: list(), clauses :: [cerl:c_clause()],
 		    timeout :: cerl:cerl(),
 		    action :: cerl:cerl()}).
 
