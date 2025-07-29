@@ -22,6 +22,7 @@
 %% Purpose: Core Erlang abstract syntax functions.
 
 -module(core_lib).
+-compile(warn_missing_spec_all).
 -moduledoc false.
 
 -export([make_values/1]).
@@ -51,6 +52,7 @@ make_values(E) -> E.
 
 is_var_used(V, B) -> vu_expr(V, B).
 
+-spec vu_expr(cerl:var_name(), cerl:cerl()) -> boolean().
 vu_expr(V, #c_values{es=Es}) ->
     vu_expr_list(V, Es);
 vu_expr(V, #c_var{name=V2}) -> V =:= V2;
@@ -113,9 +115,11 @@ vu_expr(V, #c_try{arg=E,vars=Vs,body=B,evars=Evs,handler=H}) ->
 	    end
     end.
 
+-spec vu_expr_list(cerl:var_name(), [cerl:cerl()]) -> boolean().
 vu_expr_list(V, Es) ->
     lists:any(fun(E) -> vu_expr(V, E) end, Es).
 
+-spec vu_seg_list(cerl:var_name(), [cerl:c_bitstr()]) -> boolean().
 vu_seg_list(V, Ss) ->
     lists:any(fun (#c_bitstr{val=Val,size=Size}) ->
 		      vu_expr(V, Val) orelse vu_expr(V, Size)
@@ -135,6 +139,7 @@ vu_clauses(V, Cs) ->
 %% vu_pattern_list(VarName, [Pattern]) -> Used.
 %%  Binary and map patterns can use variables.
 
+-spec vu_pattern(cerl:var_name(), cerl:cerl()) -> boolean().
 vu_pattern(V, #c_var{name=V2}) ->
     V =:= V2;
 vu_pattern(V, #c_cons{hd=H,tl=T}) ->
@@ -149,14 +154,17 @@ vu_pattern(V, #c_alias{var=Var,pat=P}) ->
     vu_pattern(V, Var) orelse vu_pattern(V, P);
 vu_pattern(_V, #c_literal{}) -> false.
 
+-spec vu_pattern_list(cerl:var_name(), [cerl:cerl()]) -> boolean().
 vu_pattern_list(V, Ps) ->
     lists:any(fun(P) -> vu_pattern(V, P) end, Ps).
 
+-spec vu_pat_seg_list(cerl:var_name(), [cerl:c_bitstr()]) -> boolean().
 vu_pat_seg_list(V, Ss) ->
     lists:any(fun(#c_bitstr{size=Size}) ->
                       vu_pattern(V, Size)
               end, Ss).
 
+-spec vu_map_pairs(cerl:var_name(), [cerl:c_map_pair()]) -> boolean().
 vu_map_pairs(V, [#c_map_pair{key=Key,val=Pat}|T]) ->
     vu_expr(V, Key) orelse
         vu_pattern(V, Pat) orelse
