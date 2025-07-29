@@ -522,7 +522,7 @@ unfold_concrete_list([]) ->
 %% ---------------------------------------------------------------------
 
 -doc #{equiv => c_module(Name, Exports, [], Definitions)}.
--spec c_module(Name :: cerl(),
+-spec c_module(Name :: c_literal(),
                Exports :: [cerl()],
                Definitions :: [{cerl(), cerl()}]) -> c_module().
 
