@@ -378,11 +378,11 @@ result.
 
 If `skip` is returned, it returns the tree and accumulator as is.
 """.
--spec mapfold(Pre :: fun((cerl(), term()) -> {cerl(), term()} | skip),
-              Post :: fun((cerl(), term()) -> {cerl(), term()}),
-	      Initial :: term(),
+-spec mapfold(Pre :: fun((cerl(), E) -> {cerl(), E} | skip),
+              Post :: fun((cerl(), E) -> {cerl(), E}),
+	      Initial :: E,
               Tree :: cerl()) ->
-          {cerl(), term()}.
+          {cerl(), E}.
 
 mapfold(Pre, Post, S00, T0) ->
     case Pre(T0, S00) of
