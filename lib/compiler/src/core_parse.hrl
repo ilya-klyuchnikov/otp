@@ -50,7 +50,7 @@
 		 args :: [cerl:cerl()]}).
 
 -record(c_case, {anno=[] :: list(), arg :: cerl:cerl(),
-		 clauses :: [cerl:cerl()]}).
+		 clauses :: [cerl:c_clause()]}).
 
 -record(c_catch, {anno=[] :: list(), body :: cerl:cerl()}).
 

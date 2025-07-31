@@ -180,6 +180,7 @@
                load_nif=false :: boolean()      %true if calls erlang:load_nif/2
 	      }).
 -type state() :: #core{}.
+-type todo() :: dynamic().
 
 %% XXX: The following type declarations do not belong in this module
 -type fa()        :: {atom(), arity()}.
@@ -4384,6 +4385,7 @@ primop(Name, Args, Anno) ->
 %%% nested case in a letrec.
 %%%
 
+-spec split_case(cerl:c_case(), state()) -> {c(), state()}.
 split_case(#c_case{anno=CaseAnno,arg=Arg,clauses=Cs0}=Case0, St0) ->
     Args = case Arg of
                #c_values{es=Es} -> Es;
@@ -4402,6 +4404,7 @@ split_case(#c_case{anno=CaseAnno,arg=Arg,clauses=Cs0}=Case0, St0) ->
             {Body,St3}
     end.
 
+-spec split_var_args([c()], state()) -> {[cerl:c_var() | cerl:c_literal()], state()}.
 split_var_args(Args, St) ->
     mapfoldl(fun(#c_var{}=Var, S0) ->
                      {Var,S0};
@@ -4431,6 +4434,7 @@ split_case_letrec(#c_fun{anno=FunAnno0}=Fun0, Body, #core{gcount=C}=St0) ->
     St = St0#core{gcount=C+1},
     lbody(Letrec, St).
 
+-spec split_clauses([cerl:c_clause()], [todo()], todo(), state()) -> {todo(), todo(), state()} | none.
 split_clauses([C0|Cs0], Args, CaseAnno, St0) ->
     case split_clauses(Cs0, Args, CaseAnno, St0) of
         none ->
@@ -4479,6 +4483,7 @@ split_fc_clause(Args, Anno0, #core{gcount=Count}=St0) ->
     {#c_clause{anno=[dialyzer_ignore|Anno],pats=Vars,
                guard=#c_literal{val=true},body=Apply},St1}.
 
+-spec split_clause(cerl:c_clause(), state()) -> {todo(), todo(), state()} | none.
 split_clause(#c_clause{pats=Ps0}, St0) ->
     case split_pats(Ps0, St0) of
         none ->
