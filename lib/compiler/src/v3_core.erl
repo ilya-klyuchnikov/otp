@@ -2335,6 +2335,7 @@ preprocess_zip_generators([#igen{}=Igen | Rest], #izip{}=Zip0) ->
 preprocess_zip_generators([], Zip) ->
     Zip.
 
+-spec get_nomatch_total([term()]) -> skip | mixed | strict.
 get_nomatch_total(NomatchModes) ->
     case all(fun(X) -> X =:= skip end, NomatchModes) of
         true -> skip;
@@ -2413,6 +2414,7 @@ replace_list_vars(tuple, Es, Vars) ->
     [replace_vars(E, Vars) || E <- Es].
 
 %% If the pattern contains no named variables, collapse it to '_'.
+-spec no_vars(Pat) -> Pat | cerl:c_var().
 no_vars(Pat) ->
     Vars = lit_vars(Pat),
     case all(fun (V) -> V =:= '_' end, Vars) of
@@ -2423,6 +2425,7 @@ no_vars(Pat) ->
 %% Retrieve the annotation from an Erlang AST form.
 %% (Use get_anno/1 to retrieve the annotation from Core Erlang forms).
 
+-spec get_qual_anno(erl_parse:af_qualifier()) -> erl_anno:anno().
 get_qual_anno(Abstract) -> element(2, Abstract).
 
 %%
@@ -2929,10 +2932,12 @@ pattern({op,_Line,_Op,_L,_R}=Op, St) ->
     pattern(erl_eval:partial_eval(Op), St).
 
 %% pattern_map_pairs([MapFieldExact],State) -> [#c_map_pairs{}]
+-spec pattern_map_pairs([erl_parse:af_assoc_exact(erl_parse:af_pattern())], state()) -> {[#imappair{}], state()}.
 pattern_map_pairs(Ps, St0) ->
     {CMapPairs,St1} = mapfoldl(fun pattern_map_pair/2, St0, Ps),
     {pat_alias_map_pairs(CMapPairs),St1}.
 
+-spec pattern_map_pair(erl_parse:af_assoc_exact(erl_parse:af_pattern()), state()) -> {#imappair{}, state()}.
 pattern_map_pair({map_field_exact,L,K,V}, St0) ->
     Ck0 = erl_eval:partial_eval(K),
     {Ck,St1} = exprs([Ck0], St0),
@@ -2942,6 +2947,7 @@ pattern_map_pair({map_field_exact,L,K,V}, St0) ->
                key=Ck,
                val=Cv},St2}.
 
+-spec pat_alias_map_pairs([#imappair{}]) -> [#imappair{}].
 pat_alias_map_pairs(Ps) ->
     D0 = foldl(fun(#imappair{key=K0}=Pair, A) ->
                        K = map_sort_key(K0, A),
@@ -2957,6 +2963,7 @@ pat_alias_map_pairs(Ps) ->
     D = sort(maps:to_list(D0)),
     pat_alias_map_pairs_1(D).
 
+-spec pat_alias_map_pairs_1([{_, [#imappair{}]}]) -> [#imappair{}].
 pat_alias_map_pairs_1([{_,[#imappair{val=V0}=Pair|Vs]}|T]) ->
     V = foldl(fun(#imappair{val=V}, Pat) ->
 		      pat_alias(V, Pat)
