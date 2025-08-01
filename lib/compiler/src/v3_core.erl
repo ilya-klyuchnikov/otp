@@ -4243,6 +4243,7 @@ c_call_erl(Fun, Args) ->
     cerl:ann_c_call(As, cerl:c_atom(erlang), cerl:c_atom(Fun), Args).
 
 
+-spec c_add_dummy_export(cerl:c_clause(), [term()], state()) -> {cerl:c_clause(), state()}.
 c_add_dummy_export(#c_clause{body=B0}=C, [_|_]=Exp, St0) ->
     %% Add dummy export in order to always return the correct number
     %% of values for the default clause.
