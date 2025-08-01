@@ -112,7 +112,7 @@
 -record(icase,     {anno=#a{},args,clauses,fc}).
 -record(icatch,    {anno=#a{},body}).
 -record(iclause,   {anno=#a{},pats,guard,body}).
--record(ifun,      {anno=#a{},id,vars,clauses,fc,name=unnamed}).
+-record(ifun,      {anno=#a{},id,vars :: [cerl:c_var()],clauses,fc,name=unnamed}).
 -record(iletrec,   {anno=#a{},defs,body}).
 -record(imatch,    {anno=#a{},pat,guard=[],arg,fc}).
 -record(iexprs,    {anno=#a{},bodies=[]}).
@@ -128,11 +128,12 @@
 -record(igen,      {anno=#a{},acc_pat,acc_guard,
                     nomatch_pat,nomatch_mode,
                     tail,tail_pat,arg,
-                    refill={nomatch,ignore}}).
+                    refill={nomatch,ignore} :: {nomatch,ignore} | {c(), iset()}}).
 -record(izip,      {anno=#a{},acc_pats=[],acc_guard,
                     nomatch_pats=[],nomatch_total=[],skip_pats=[],
                     tails=[],tail_pats=[],pres=[],args=[],
-                    refill_pats=[],refill_as=[]}).
+                    refill_pats=[] :: [c() | nomatch],
+                    refill_as=[] :: [iset() | ignore]}).
 -record(isimple,   {anno=#a{},term :: c()}).
 
 -type iapply()    :: #iapply{}.
@@ -929,6 +930,7 @@ expr({'fun',L,{function,F,A}}, St0) ->
     Lanno = full_anno(L, St0),
     {#c_var{anno=Lanno,name={F,A}},[],St0};
 expr({'fun',L,{function,M,F,A}}, St0) ->
+    % eqwalizer:ignore according to erl_parse API M/F can be module, A - arity
     {As,Aps,St1} = safe_list([M,F,A], St0),
     Lanno = full_anno(L, St1),
     {#icall{anno=#a{anno=Lanno},
@@ -2736,11 +2738,13 @@ list_gen_pattern(P0, Line, St) ->
 %%  any unqualified call to is_list/1 will be to the local function.
 %%  The guard function must be explicitly called as erlang:is_list/1.
 
+-spec is_guard_test(erl_parse:abstract_expr() | erl_parse:af_qualifier()) -> boolean().
 is_guard_test(E) ->
     %% erl_expand_records has added a module prefix to any call
     %% to a BIF or imported function. Any call without a module
     %% prefix that remains must therefore be to a local function.
     IsOverridden = fun({_,_}) -> true end,
+    % eqwalizer:ignore - passing qualifier is safe
     erl_lint:is_guard_test(E, [], IsOverridden).
 
 %% novars(Expr, State) -> {Novars,[PreExpr],State}.
@@ -2767,6 +2771,7 @@ force_novars(Ce, St) ->
 %%  Generate an internal safe expression for a list of
 %%  expressions.
 
+-spec safe_list([erl_parse:abstract_expr() | prot_guard()], state()) -> {[c() | i()], [c() | i()], state()}.
 safe_list(Es, St0) ->
     {Vs,Eps0,St} =
         foldr(fun (E, {Ces,Eps,Sti0}) ->
@@ -2794,7 +2799,7 @@ safe_list(Es, St0) ->
 %%  binaries which can fail.  At this level we do not need to do a
 %%  deep check.  Must do special things with matches here.
 
--spec safe(erl_parse:abstract_expr(), state()) -> {c() | i(), [c() | i()], state()}.
+-spec safe(erl_parse:abstract_expr() | prot_guard(), state()) -> {c() | i(), [c() | i()], state()}.
 safe(E0, St0) ->
     {E1,Eps,St1} = expr(E0, St0),
     {Se,Sps,St2} = force_safe(E1, St1),
