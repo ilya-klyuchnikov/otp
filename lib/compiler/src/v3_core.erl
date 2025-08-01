@@ -2168,21 +2168,28 @@ mc_tq(Line, {map_field_assoc,Lf,K,V}, Qs, Mc, St0) ->
                   args=[LcVar]},
     {Call,Pre,St2}.
 
+-spec make_refill(
+    [c() | nomatch],
+    integer(),
+    [iset() | ignore],
+    {[c() | i()], [_], [c() | i()], c() | i()}
+) -> [iclause() | nomatch].
 make_refill([nomatch|RefillPats], Index, [_|Bodies], Args) ->
     make_refill(RefillPats, Index + 1, Bodies, Args);
 make_refill([RefillPat0|RefillPats], Index, [RefillBody|Bodies], {TailVars, LA, Mc, Sc}=Args) ->
     {H, [_|T]} = split(Index, TailVars),
     RefillPat1 = H ++ [RefillPat0|T] ++ Mc,
+    % eqwalizer:ignore - ignore in clause?
     RefillClause = make_clause(LA, RefillPat1, [], [RefillBody,Sc]),
     [RefillClause|make_refill(RefillPats, Index + 1, Bodies, Args)];
 make_refill([], _Index, [], _Args) ->
     [].
 
--spec make_clause(list(), [c() | i()], [c() | i()], [c() | i()]) -> iclause() | nomatch.
+-spec make_clause(list(), [c() | i() | nomatch], [c() | i()], [c() | i()]) -> iclause() | nomatch.
 make_clause(Anno, [Pat|PatExtra], Guard, Body) ->
     make_clause(Anno, Pat, PatExtra, Guard, Body).
 
--spec make_clause(list(), c() | i() | nomatch, [c() | i()], [c() | i()], [c() | i()]) -> iclause() | nomatch.
+-spec make_clause(list(), c() | i() | nomatch, [c() | i() | nomatch], [c() | i()], [c() | i()]) -> iclause() | nomatch.
 make_clause(_Anno, nomatch, _PatExtra, _Guard, _Body) ->
     nomatch;
 make_clause(Anno, Pat, PatExtra, Guard, Body) ->
@@ -2190,6 +2197,7 @@ make_clause(Anno, Pat, PatExtra, Guard, Body) ->
         true ->
             nomatch;
         false ->
+            % eqwalizer:ignore - nomatch was filtered out above
             #iclause{anno=#a{anno=Anno},pats=[Pat|PatExtra],
                      guard=Guard,body=Body}
     end.
@@ -2286,6 +2294,7 @@ preprocess_quals(Line, [Q|Qs0], StrictPats, St0, Acc) ->
     case is_generator(Q) of
         true ->
             {Gs,Qs} = splitwith(fun is_guard_test/1, Qs0),
+            % eqwalizer:ignore - see split
             {Gen,St} = generator(Line, Q, Gs, StrictPats, St0),
             preprocess_quals(Line, Qs, StrictPats, St, [Gen|Acc]);
         false ->
@@ -2296,6 +2305,7 @@ preprocess_quals(Line, [Q|Qs0], StrictPats, St0, Acc) ->
                     %% #ifilter{} record is a list as returned by
                     %% lc_guard_tests/2.
                     {Gs,Qs} = splitwith(fun is_guard_test/1, Qs0),
+                    % eqwalizer:ignore - split
                     {Cg,St} = lc_guard_tests([Q|Gs], St0),
                     Filter = #ifilter{anno=LAnno,arg=Cg},
                     preprocess_quals(Line, Qs, StrictPats, St, [Filter|Acc]);
@@ -2383,6 +2393,7 @@ get_strict_patterns([], _, Acc) ->
 %% First replace all named variables in the pattern with `_`, unless they
 %% appear in the list of strict patterns. Then collapse all structures with no
 %% named variables to '_'.
+-spec replace_vars(todo(), [cerl:var_name()]) -> todo(). % c() | i()
 replace_vars(#c_cons{hd=H,tl=T}, Vars) ->
     T1 = replace_vars(T, Vars),
     H1 = replace_vars(H, Vars),
@@ -2408,6 +2419,7 @@ replace_vars(#c_var{name=Var}=V, Vars) ->
     end;
 replace_vars(V, _) -> V.
 
+-spec replace_list_vars(map | tuple, [], [cerl:var_name()]) -> [todo()].
 replace_list_vars(map, Es, Vars) ->
     [replace_vars(E, Vars) || E <- Es, replace_vars(E, Vars) =/= []];
 replace_list_vars(tuple, Es, Vars) ->
@@ -2456,7 +2468,7 @@ get_qual_anno(Abstract) -> element(2, Abstract).
 -spec generator(
     erl_anno:anno(),
     erl_parse:af_qualifier(),
-    [erl_parse:af_qualifier()],
+    [erl_parse:af_guard_test()],
     [cerl:var_name()],
     state()
 ) -> {igen(), state()}.
@@ -2726,6 +2738,7 @@ skip_segments([B|Rest], St0, Acc) ->
 skip_segments([], St, Acc) ->
     {reverse(Acc),St}.
 
+-spec lc_guard_tests(erl_parse:af_guard(), state()) -> {[c() | i()], state()}.
 lc_guard_tests([], St) -> {[],St};
 lc_guard_tests(Gs0, St0) ->
     Gs1 = guard_tests(Gs0),
