@@ -2688,6 +2688,7 @@ generator(Line, {Generate,Lg,{map_field_exact,_,K0,V0},E}, Gs, StrictPats, St0)
                 arg={Pre,OuterIterVar}},
     {Gen,St4}.
 
+-spec append_tail_segment([ibitstr()], state()) -> {[ibitstr()], cerl:c_var(), ibitstr(), state()}.
 append_tail_segment(Segs, St0) ->
     {Var,St} = new_var(St0),
     Tail = #ibitstr{val=Var,size=[#c_literal{val=all}],
@@ -2701,6 +2702,7 @@ append_tail_segment(Segs, St0) ->
 %%  in the skip clause that will continue the iteration when
 %%  the accumulator pattern didn't match.
 
+-spec skip_segments([ibitstr()], state(), [ibitstr()]) -> {[ibitstr()], state()}.
 skip_segments([#ibitstr{val=#c_var{},type=#c_literal{val=float}}=B|Rest], St, Acc) ->
     skip_segments(Rest, St, [B#ibitstr{type=#c_literal{val=integer}}|Acc]);
 skip_segments([#ibitstr{type=#c_literal{val=float}}=B|Rest], St0, Acc) ->
@@ -3011,6 +3013,7 @@ pat_segment({bin_element,L,Val,Size0,Type0}, St) ->
               type=#c_literal{val=Type},
               flags=#c_literal{val=Flags}},St2}.
 
+-spec coerce_to_float(c() | i(), erl_parse:type_specifier()) -> c() | i().
 coerce_to_float(#c_literal{val=Int}=E, float) when is_integer(Int) ->
     try
 	E#c_literal{val=float(Int)}
@@ -3102,6 +3105,7 @@ pattern_list([P0|Ps0], St0) ->
 pattern_list([], St) ->
     {[],St}.
 
+-spec string_to_conses(erl_anno:anno(), string(), erl_parse:af_pattern()) -> erl_parse:af_pattern().
 string_to_conses(Line, Cs, Tail) ->
     foldr(fun (C, T) -> {cons,Line,{char,Line,C},T} end, Tail, Cs).
 
@@ -3155,10 +3159,12 @@ new_vars_1(N, Anno, St0, Vs) when N > 0 ->
     new_vars_1(N-1, Anno, St1, [V|Vs]);
 new_vars_1(0, _, St, Vs) -> {Vs,St}.
 
+-spec bad_generator([c()], c() | i(), c() | i()) -> iclause().
 bad_generator(Ps, Generator, Arg) ->
     L = [#c_literal{val=bad_generator}, Generator],
     bad_generator_common(L, Ps, Arg).
 
+-spec bad_generators([c()], c() | i(), bc | lc, atom()) -> iclause().
 bad_generators(Ps, Arg, bc, ErrorType) ->
     T1 = #c_tuple{es=droplast(Ps)},
     L = [#c_literal{val=ErrorType}, T1],
@@ -3168,8 +3174,10 @@ bad_generators(Ps, Arg, lc, ErrorType) ->
     L = [#c_literal{val=ErrorType}, T],
     bad_generator_common(L, Ps, Arg).
 
+-spec bad_generator_common([c() | i()], [c()], c() | i()) -> iclause().
 bad_generator_common(L, Ps, Arg) ->
     Anno = get_anno(Arg),
+    % eqwalizer:ignore i() in c()
     Tuple = ann_c_tuple(Anno, L),
     Call = #icall{anno=#a{anno=Anno},           %Must have an #a{}
                   module=#c_literal{anno=Anno,val=erlang},
