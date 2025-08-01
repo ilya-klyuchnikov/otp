@@ -4712,6 +4712,11 @@ split_data([E|Es0], Type, St0, Acc) ->
     end;
 split_data([], _, _, _) -> none.
 
+-spec split_bin_segments(
+    [cerl:c_bitstr()], gb_sets:set(cerl:var_name()), state(), [cerl:c_bitstr()]
+) -> {size_var, cerl:c_var(), fun(), [cerl:c_bitstr()], [cerl:c_bitstr()], state()}
+     | {sequential_match, [cerl:c_bitstr()], [cerl:c_bitstr()], state()}
+     | none.
 split_bin_segments([#c_bitstr{anno=Anno0}=S0|Segs], Vars, St, Acc) ->
     case member(sequential_match, Anno0) of
         true ->
@@ -4724,6 +4729,11 @@ split_bin_segments([#c_bitstr{anno=Anno0}=S0|Segs], Vars, St, Acc) ->
 split_bin_segments(_, _, _, _) ->
     none.
 
+-spec split_bin_segments_1(
+    cerl:c_bitstr(), [cerl:c_bitstr()], gb_sets:set(cerl:var_name()), state(), [cerl:c_bitstr()]
+) -> {size_var, cerl:c_var(), fun(), [cerl:c_bitstr()], [cerl:c_bitstr()], state()}
+     | {sequential_match, [cerl:c_bitstr()], [cerl:c_bitstr()], state()}
+     | none.
 split_bin_segments_1(#c_bitstr{val=Val,size=Size}=S0, Segs, Vars0, St0, Acc) ->
     Vars = case Val of
                #c_var{name=V} -> gb_sets:add(V, Vars0);
@@ -4756,6 +4766,7 @@ split_bin_segments_1(#c_bitstr{val=Val,size=Size}=S0, Segs, Vars0, St0, Acc) ->
             {size_var,TailVar,Wrap,reverse(Acc, [Tail]),[S|Segs],St3}
     end.
 
+-spec split_tail_seg(cerl:c_bitstr(), [cerl:c_bitstr()], state()) -> {cerl:c_var(), cerl:c_bitstr(), state()}.
 split_tail_seg(#c_bitstr{anno=A}=S, Segs, St0) ->
     {TailVar,St} = new_var(St0),
     Unit = split_bin_unit([S|Segs], St0),
@@ -4775,6 +4786,7 @@ split_wrap(SizeVar, SizeExpr, St0) ->
              #c_let{vars=[SizeVar],arg=Try,body=Body}
      end,St1}.
 
+-spec split_bin_unit([cerl:c_bitstr()], state()) -> integer().
 split_bin_unit(Ss, #core{dialyzer=Dialyzer}) ->
     case Dialyzer of
         true ->
@@ -4809,6 +4821,7 @@ split_bin_unit(Ss, #core{dialyzer=Dialyzer}) ->
             1
     end.
 
+-spec split_bin_unit_1([cerl:c_bitstr()], integer()) -> integer().
 split_bin_unit_1([#c_bitstr{type=#c_literal{val=Type},size=Size,
                             unit=#c_literal{val=U}}|Ss],
                  GCU) ->

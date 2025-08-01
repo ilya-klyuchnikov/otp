@@ -72,7 +72,7 @@
                    defs :: [{cerl:c_var(), cerl:cerl()}],
 		   body :: cerl:cerl()}).
 
--record(c_literal, {anno=[] :: list(), val :: any()}).
+-record(c_literal, {anno=[] :: list(), val :: dynamic()}).
 
 -record(c_map, {anno=[] :: list(),
 		arg=#c_literal{val=#{}} :: cerl:c_var() | cerl:c_literal(),
