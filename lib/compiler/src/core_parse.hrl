@@ -81,7 +81,7 @@
 
 -record(c_map_pair, {anno=[] :: list(),
 	             op :: #c_literal{val::'assoc'} | #c_literal{val::'exact'},
-		     key :: dynamic(),              % TODO
+		     key :: cerl:cerl(),              % TODO
 		     val :: dynamic()}).            % TODO
 
 -record(c_module, {anno=[] :: list(), name :: cerl:c_literal(),

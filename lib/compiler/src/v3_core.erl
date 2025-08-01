@@ -3935,6 +3935,7 @@ cbody(B0, Nifs, St0) ->
 %% cclause(Lclause, [AfterVar], State) -> {Cclause,State}.
 %%  The AfterVars are the exported variables.
 
+-spec cclause(iclause(), todo(), state()) -> {cerl:c_clause(), state()}.
 cclause(#iclause{anno=#a{anno=Anno},pats=Ps0,guard=G0,body=B0}, Exp, St0) ->
     Ps = cpattern_list(Ps0),
     {B1,_Us1,St1} = cexprs(B0, Exp, St0),
@@ -4492,6 +4493,7 @@ split_clause(#c_clause{pats=Ps0}, St0) ->
             {Ps,Case,St}
     end.
 
+-spec split_pats([c()], state()) -> {todo(), todo(), state()} | none.
 split_pats([P0|Ps0], St0) ->
     case split_pats(Ps0, St0) of
         none ->
@@ -4507,6 +4509,7 @@ split_pats([P0|Ps0], St0) ->
 split_pats([], _) ->
     none.
 
+-spec split_pat(c(), state()) -> {todo(), todo(), state()} | none.
 split_pat(#c_binary{anno=Anno0,segments=Segs0}=Bin, St0) ->
     Vars = gb_sets:empty(),
     case split_bin_segments(Segs0, Vars, St0, []) of
@@ -4542,7 +4545,9 @@ split_pat(#c_alias{pat=Pat}=Alias0, St0) ->
             {Alias,{split,[Var],Ps,Split},St}
     end;
 split_pat(Data, St0) ->
+    % eqwalizer:fixme - TODO
     Type = cerl:data_type(Data),
+    % eqwalizer:fixme - TODO
     Es = cerl:data_es(Data),
     split_data(Es, Type, St0, []).
 
@@ -4568,6 +4573,13 @@ size_var_before_bin(#c_binary{anno=Anno0,segments=Segments}=Bin0, Bef, St0) ->
             {Bin,Anno0,St0}
     end.
 
+-spec split_map_pat(
+    [cerl:c_map_pair()], cerl:c_map(), state(), [cerl:c_map_pair()]
+) -> {
+    c(),
+    {split, [c()], fun(), c(), nil}
+    | {split, [c()], todo(), todo()}, state()
+} | none.
 split_map_pat([#c_map_pair{key=Key,val=Val}=E0|Es], Map0, St0, Acc) ->
     case eval_map_key(Key, E0, Es, Map0, St0) of
         none ->
@@ -4587,6 +4599,9 @@ split_map_pat([#c_map_pair{key=Key,val=Val}=E0|Es], Map0, St0, Acc) ->
     end;
 split_map_pat([], _, _, _) -> none.
 
+-spec eval_map_key(
+    c(), cerl:c_map_pair(), [cerl:c_map_pair()], cerl:c_map(), state()
+) -> {cerl:c_var(), {split, [c()], fun(), c(), nil}, state()} | none.
 eval_map_key(#c_var{}, _E, _Es, _Map, _St) ->
     none;
 eval_map_key(#c_literal{}, _E, _Es, _Map, _St) ->
@@ -4598,6 +4613,7 @@ eval_map_key(Key, E0, Es, Map, St0) ->
     {Wrap,CaseArg,AftMap,St2} = wrap_map_key_fun(Key, KeyVar, MapVar, AftMap0, St1),
     {MapVar,{split,[CaseArg],Wrap,AftMap,nil},St2}.
 
+-spec wrap_map_key_fun(c(), cerl:c_var(), cerl:c_var(), cerl:c_map(), state()) -> {fun(), c(), c(), state()}.
 wrap_map_key_fun(Key, KeyVar, MapVar, AftMap, St0) ->
     case is_safe(Key) of
         true ->
