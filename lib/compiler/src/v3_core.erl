@@ -2144,6 +2144,13 @@ bzip_tq1(Line, E, #izip{anno=#a{anno=_GA}=GAnno,
               body=append(Pres) ++
                   [#iapply{anno=LAnno,op=F,args=Args++[Mc]}]},[],St4}.
 
+-spec mc_tq(
+    erl_anno:anno(),
+    erl_parse:af_assoc(erl_parse:abstract_expr()),
+    [izip() | ifilter() | igen()],
+    cerl:c_literal(),
+    state()
+) -> {icall(), [c() | i()], state()}.
 mc_tq(Line, {map_field_assoc,Lf,K,V}, Qs, Mc, St0) ->
     E = {tuple,Lf,[K,V]},
     {Lc,Pre0,St1} = lc_tq(Line, E, Qs, Mc, St0),
@@ -2295,6 +2302,7 @@ preprocess_quals(Line, [Q|Qs0], StrictPats, St0, Acc) ->
 preprocess_quals(_, [], _, St, Acc) ->
     {reverse(Acc),St}.
 
+-spec preprocess_zip_generators([izip() | ifilter() | igen()], izip()) -> izip().
 preprocess_zip_generators([#igen{}=Igen | Rest], #izip{}=Zip0) ->
     Zip = preprocess_zip_generators(Rest, Zip0),
 
@@ -2433,6 +2441,13 @@ get_qual_anno(Abstract) -> element(2, Abstract).
 %% generator(Line, Generator, Guard, State) -> {Generator',State}.
 %%  Transform a given generator into its #igen{} representation.
 
+-spec generator(
+    erl_anno:anno(),
+    erl_parse:af_qualifier(),
+    [erl_parse:af_qualifier()],
+    [cerl:var_name()],
+    state()
+) -> {igen(), state()}.
 generator(Line, {Generate,Lg,P0,E}, Gs, StrictPats, St0)
   when Generate =:= generate;
        Generate =:= generate_strict ->
@@ -2445,6 +2460,7 @@ generator(Line, {Generate,Lg,P0,E}, Gs, StrictPats, St0)
                  nomatch ->
                      nomatch;
                  _ ->
+                     % eqwalizer:ignore - i() in c()
                      ann_c_cons(LA, Head, Tail)
              end,
     NomatchPat =
@@ -2702,6 +2718,9 @@ lc_guard_tests(Gs0, St0) ->
     {Gs,St} = gexpr_top(Gs1, St0#core{in_guard=true}),
     {Gs,St#core{in_guard=false}}.
 
+-spec list_gen_pattern(
+    erl_parse:af_pattern(), erl_anno:anno(), state()
+) -> {c() | imap() | ibinary() | nomatch, state()}.
 list_gen_pattern(P0, Line, St) ->
     try
 	pattern(P0, St)
@@ -2817,6 +2836,7 @@ force_safe(Ce, St0) ->
 	    {V,[#iset{var=V,arg=Ce}],St1}
     end.
 
+-spec is_safe(c() | i()) -> boolean().
 is_safe(#c_cons{}) -> true;
 is_safe(#c_tuple{}) -> true;
 is_safe(#c_var{name={_,_}}) -> false;           %Fun. Not safe.
