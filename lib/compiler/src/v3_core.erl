@@ -111,7 +111,10 @@
 -record(icall,     {anno=#a{},module,name,args}).
 -record(icase,     {anno=#a{},args,clauses,fc}).
 -record(icatch,    {anno=#a{},body}).
--record(iclause,   {anno=#a{},pats,guard,body}).
+-record(iclause,   {anno=#a{},
+                    pats :: [c() | i()],
+                    guard :: [c() | i()],
+                    body :: [c() | i()]}).
 -record(ifun,      {anno=#a{},id,vars :: [cerl:c_var()],clauses,fc,name=unnamed}).
 -record(iletrec,   {anno=#a{},defs,body}).
 -record(imatch,    {anno=#a{},pat,guard=[],arg,fc}).
@@ -1869,6 +1872,7 @@ lc_tq1(Line, E, [#igen{anno=#a{anno=GA}=GAnno,
                                 make_clause([compiler_generated|LA],
                                             AccPat, [], [], [Sc])
                         end,
+    % eqwalizer:fixme - RefillAction can be ignore
     RefillClause = make_clause(LA, RefillPat, [], [], [RefillAction,Sc]),
     Cs0 = [AccClause,AccClauseNoGuards|
            case TailPat of
@@ -2011,6 +2015,7 @@ bc_tq1(Line, E, [#igen{anno=#a{anno=GA}=GAnno,
                                 make_clause([compiler_generated|LA],
                                             AccPat, [IgnoreVar], [], [Sc])
                         end,
+    % eqwalizer:fixme - RefillAction can be ignore
     RefillClause = make_clause(LA, RefillPat, [AccVar], [], [RefillAction,Sc]),
     Cs0 = [AccClause,AccClauseNoGuards|
            case TailPat of
@@ -2173,9 +2178,11 @@ make_refill([RefillPat0|RefillPats], Index, [RefillBody|Bodies], {TailVars, LA, 
 make_refill([], _Index, [], _Args) ->
     [].
 
+-spec make_clause(list(), [c() | i()], [c() | i()], [c() | i()]) -> iclause() | nomatch.
 make_clause(Anno, [Pat|PatExtra], Guard, Body) ->
     make_clause(Anno, Pat, PatExtra, Guard, Body).
 
+-spec make_clause(list(), c() | i() | nomatch, [c() | i()], [c() | i()], [c() | i()]) -> iclause() | nomatch.
 make_clause(_Anno, nomatch, _PatExtra, _Guard, _Body) ->
     nomatch;
 make_clause(Anno, Pat, PatExtra, Guard, Body) ->
