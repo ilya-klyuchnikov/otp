@@ -1949,6 +1949,7 @@ zip_tq(Line, E, #izip{anno=#a{anno=GA}=GAnno,
 %%  This TQ from Gustafsson ERLANG'05.
 %%  More could be transformed before calling bc_tq.
 
+-spec bc_tq(erl_anno:anno(), erl_parse:abstract_expr(), [erl_parse:af_qualifier()], state()) -> {c() | i(), [c() | i()], state()}.
 bc_tq(Line, Exp, Qs0, St0) ->
     {BinVar,St1} = new_var(St0),
     {Qs1,St2} = preprocess_quals(Line, Qs0, St1),
@@ -1967,6 +1968,7 @@ bc_tq(Line, Exp, Qs0, St0) ->
                             args=[InitialSize]}}] ++ BcPre,
     {E,Pre,St}.
 
+-spec bc_tq1(erl_anno:anno(), erl_parse:abstract_expr(), [izip() | ifilter() | igen()], c() | i(), state()) -> {i(), [c() | i()], state()}.
 bc_tq1(Line, E, [#igen{anno=#a{anno=GA}=GAnno,
 		       acc_pat=AccPat,acc_guard=AccGuard,
                        nomatch_pat=NomatchPat,
@@ -2040,6 +2042,7 @@ bc_tq1(Line, E0, [], AccVar, St0) ->
 	#c_var{name=VarName} ->
 	    Var = {var,Line,VarName},
 	    Els = [{bin_element,Line,Var,BsSize,BsFlags}],
+        % eqwalizer:ignore - int as var name
 	    bc_tq_build(Line, Pre0, AccVar, Els, St1);
 	#c_literal{val=Val} when is_bitstring(Val) ->
 	    Bits = bit_size(Val),
@@ -2056,14 +2059,31 @@ bc_tq1(Line, E0, [], AccVar, St0) ->
 	    bc_tq_build(Line, Pre0, AccVar, Els, St1)
     end.
 
+-spec bc_tq_build(
+    erl_anno:anno(),
+    [c() | i()],
+    c() | i(),
+    [erl_parse:af_binelement(erl_parse:abstract_expr())],
+    state()
+) -> {i(), [c() | i()], state()}.
 bc_tq_build(Line, Pre0, #c_var{name=AccVar}, Elements0, St0) ->
     Elements = [{bin_element,Line,{var,Line,AccVar},make_all_size(Line),
 		 [binary,{unit,1}]}|Elements0],
+    % eqwalizer:ignore - int as var name
     {E,Pre,St} = expr({bin,Line,Elements}, St0),
     #a{anno=A} = Anno0 = get_anno(E),
     Anno = Anno0#a{anno=[compiler_generated,single_use|A]},
+    % eqwalizer:ignore - int as var name
     {set_anno(E, Anno),Pre0++Pre,St}.
 
+-spec bzip_tq1(
+    erl_anno:anno(),
+    erl_parse:abstract_expr(),
+    izip(),
+    c() | i(),
+    state(),
+    [izip() | ifilter() | igen()]
+) -> {iletrec(), [], state()}.
 bzip_tq1(Line, E, #izip{anno=#a{anno=_GA}=GAnno,
                         acc_pats=AccPats,acc_guard=AccGuard,
                         nomatch_total=NomatchTotal,
@@ -2163,6 +2183,16 @@ make_clause(Anno, Pat, PatExtra, Guard, Body) ->
 %%  Transform an intermediate comprehension filter to its intermediate case
 %%  representation.
 
+-spec filter_tq(
+    erl_anno:anno(),
+    erl_parse:abstract_expr(),
+    ifilter(),
+    c() | i(),
+    state(),
+    [izip() | ifilter() | igen()],
+    TqFun
+) -> {icase(), [c() | i()], state()} when
+    TqFun :: fun((erl_anno:anno(), erl_parse:abstract_expr(), [izip() | ifilter() | igen()], c() | i(), state()) -> {c() | i(), [c() | i()], state()}).
 filter_tq(Line, E, #ifilter{anno=#a{anno=LA}=LAnno,arg={Pre,Arg}},
           Mc, St0, Qs, TqFun) ->
     %% The filter is an expression, it is compiled to a case of degree 1 with
@@ -3056,11 +3086,13 @@ new_fun_name(#core{function={F,A},fcount=I}=St) when is_integer(I) ->
 
 %% new_fun_name(Type, State) -> {FunName,State}.
 
+-spec new_fun_name(string(), state()) -> {atom(), state()}.
 new_fun_name(Type, #core{fcount=C}=St) when is_integer(C) ->
     {list_to_atom(Type ++ "$^" ++ integer_to_list(C)),St#core{fcount=C+1}}.
 
 %% new_var_name(State) -> {VarName,State}.
 
+-spec new_var_name(state()) -> {dynamic(), state()}. % dynamic() -> integer, but it breaks types
 new_var_name(#core{vcount=C}=St) when is_integer(C) ->
     {C,St#core{vcount=C + 1}}.
 
@@ -3082,6 +3114,7 @@ new_var(Anno, St0) when is_list(Anno) ->
 
 -spec new_vars(integer(), state()) -> {[cerl:c_var()], state()}.
 new_vars(N, St) -> new_vars_1(N, [], St, []).
+-spec new_vars(list(), integer(), state()) -> {[cerl:c_var()], state()}.
 new_vars(Anno, N, St) -> new_vars_1(N, Anno, St, []).
 
 -spec new_vars_1(N :: integer(), Anno :: list(), St0 :: state(), Vs :: [cerl:c_var()]) -> {[cerl:c_var()], state()}.
@@ -3942,6 +3975,7 @@ cclause(#iclause{anno=#a{anno=Anno},pats=Ps0,guard=G0,body=B0}, Exp, St0) ->
     {G1,St2} = cguard(G0, St1),
     {#c_clause{anno=Anno,pats=Ps,guard=G1,body=B1},St2}.
 
+-spec cclauses([iclause()], todo(), state()) -> {[cerl:c_clause()], state()}.
 cclauses(Lcs, Es, St0) ->
     mapfoldl(fun (Lc, St) -> cclause(Lc, Es, St) end, St0, Lcs).
 
