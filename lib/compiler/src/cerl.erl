@@ -3499,7 +3499,7 @@ Data constructors are cons cells, tuples, and atomic literals.
 
 _See also: _`data_arity/1`, `data_es/1`, `data_type/1`.
 """.
--spec is_data(Node :: cerl()) -> boolean().
+-spec is_data(Node :: cerl() | dynamic()) -> boolean().
 
 is_data(#c_literal{}) ->
     true;

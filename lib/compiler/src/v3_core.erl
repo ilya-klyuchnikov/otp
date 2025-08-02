@@ -3062,6 +3062,10 @@ coerce_to_float(E, _) -> E.
 %% pat_alias(CorePat, CorePat) -> AliasPat.
 %%  Normalise aliases.  Trap bad aliases by throwing 'nomatch'.
 
+-spec pat_alias(
+    todo(), % c() | imap() | ibinary()
+    todo() %c() | imap() | ibinary()
+) -> c() | todo(). % c() | imap() | ibinary()
 pat_alias(#c_var{name=V1}=P, #c_var{name=V1}) -> P;
 pat_alias(#c_var{name=V1}=Var,
 	  #c_alias{var=#c_var{name=V2},pat=Pat}=Alias) ->
@@ -3127,6 +3131,7 @@ pat_alias(P1, P2) ->
 
 %% pat_alias_list([A1], [A2]) -> [A].
 
+-spec pat_alias_list([c()], [c()]) -> [c()].
 pat_alias_list([A1|A1s], [A2|A2s]) ->
     [pat_alias(A1, A2)|pat_alias_list(A1s, A2s)];
 pat_alias_list([], []) -> [];
