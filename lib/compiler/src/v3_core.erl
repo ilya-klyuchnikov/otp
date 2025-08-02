@@ -1762,7 +1762,7 @@ count_bits_1(Int, Bits) -> count_bits_1(Int bsr 64, Bits+64).
     sl(),
     integer(),
     integer(),
-    [sl_binelement(erl_parse:abstract_expr())]
+    [sl_binelement(erl_parse:af_pattern())]
 ) -> [sl_binelement(erl_parse:abstract_expr())].
 bin_expand_string(S, Line, Val, Size, Last) when Size >= ?COLLAPSE_MAX_SIZE_SEGMENT ->
     Combined = make_combined(Line, Val, Size),
@@ -1772,7 +1772,6 @@ bin_expand_string([H|T], Line, Val, Size, Last) ->
 bin_expand_string([], Line, Val, Size, Last) ->
     [make_combined(Line, Val, Size) | Last].
 
--spec make_combined(sl(), integer(), integer()) -> sl_binelement(erl_parse:abstract_expr()).
 make_combined(SegLine, Val, Size) ->
     Line = case SegLine of
                {sl,_,Line0} -> Line0;
@@ -2984,6 +2983,7 @@ pat_alias_map_pairs_1([{_,[#imappair{val=V0}=Pair|Vs]}|T]) ->
     [Pair#imappair{val=V}|pat_alias_map_pairs_1(T)];
 pat_alias_map_pairs_1([]) -> [].
 
+-spec map_sort_key(Key :: _, KeyMap :: #{_ => [#imappair{}]}) -> {atomic, c()} | {expr, integer()}.
 map_sort_key(Key, KeyMap) ->
     case Key of
         [#c_literal{}=Lit] ->
@@ -2996,13 +2996,22 @@ map_sort_key(Key, KeyMap) ->
 
 %% pat_bin([BinElement], State) -> [BinSeg].
 
+-spec pat_bin(
+    [erl_parse:af_binelement(erl_parse:af_pattern())],
+    state()
+) -> {[ibitstr()], state()}.
 pat_bin(Ps0, St) ->
     Ps = pat_bin_expand_strings(Ps0, St),
     pat_segments(Ps, St).
 
+-spec pat_bin_expand_strings(
+    [erl_parse:af_binelement(erl_parse:af_pattern())],
+    state()
+) -> [todo()].
 pat_bin_expand_strings(Es0, #core{dialyzer=Dialyzer}) ->
     foldr(fun ({bin_element,Line,{string,_,[_|_]=S},default,default}, Es1)
                 when not Dialyzer ->
+                  % eqwalizer:ignore
                   bin_expand_string(S, Line, 0, 0, Es1);
               ({bin_element,Line,{string,_,S},Sz,Ts}, Es1) ->
                   foldr(
@@ -3013,12 +3022,20 @@ pat_bin_expand_strings(Es0, #core{dialyzer=Dialyzer}) ->
                   [E|Es]
 	  end, [], Es0).
 
+-spec pat_segments(
+    [erl_parse:af_binelement(erl_parse:af_pattern())],
+    state()
+) -> {[ibitstr()], state()}.
 pat_segments([P0|Ps0], St0) ->
     {P,St1} = pat_segment(P0, St0),
     {Ps,St2} = pat_segments(Ps0, St1),
     {[P|Ps],St2};
 pat_segments([], St) -> {[],St}.
 
+-spec pat_segment(
+    erl_parse:af_binelement(erl_parse:af_pattern()),
+    state()
+) -> {ibitstr(), state()}.
 pat_segment({bin_element,L,Val,Size0,Type0}, St) ->
     {Size1,Type1} = make_bit_type(L, Size0, Type0, matching),
     [Type,{unit,Unit}|Flags] = Type1,
