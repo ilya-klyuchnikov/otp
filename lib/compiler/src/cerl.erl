@@ -419,7 +419,7 @@ Note: This is a constant time operation.
 
 _See also: _`abstract/1`, `is_literal/1`.
 """.
--spec concrete(Node :: c_literal()) -> term().
+-spec concrete(Node :: c_literal()) -> dynamic().
 
 concrete(#c_literal{val = V}) ->
     V.
@@ -614,7 +614,7 @@ Returns the name subtree of an abstract module definition.
 
 _See also: _`c_module/4`.
 """.
--spec module_name(Node :: c_module()) -> cerl().
+-spec module_name(Node :: c_module()) -> c_literal().
 
 module_name(Node) ->
     Node#c_module.name.
