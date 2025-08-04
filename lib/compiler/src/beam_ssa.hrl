@@ -23,7 +23,7 @@
 -record(b_module, {anno=#{} :: beam_ssa:anno(),
                    name :: module(),
                    exports :: [{atom(),arity()}],
-                   attributes :: list(),
+                   attributes :: [{atom(), dynamic()}],
                    body :: [beam_ssa:b_function()]}).
 -record(b_function, {anno=#{} :: beam_ssa:anno(),
                      args :: [beam_ssa:b_var()],
