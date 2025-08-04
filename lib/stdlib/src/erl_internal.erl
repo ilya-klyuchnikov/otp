@@ -20,6 +20,7 @@
 %% %CopyrightEnd%
 %%
 -module(erl_internal).
+-compile(warn_missing_spec_all).
 -moduledoc """
 Internal Erlang definitions.
 
@@ -528,6 +529,8 @@ Adds to `Forms` the code for the standard pre-defined functions (such as
 add_predefined_functions(Forms) ->
     Forms ++ predefined_functions(Forms).
 
+-spec predefined_functions(Forms) -> Forms when
+      Forms :: [erl_parse:abstract_form() | erl_parse:form_info()].
 predefined_functions(Forms) ->
     Attrs = [{Name,Val} || {attribute,_,Name,Val} <- Forms],
     {module,Mod} = lists:keyfind(module, 1, Attrs),
@@ -539,16 +542,19 @@ predefined_functions(Forms) ->
     Exp = [{F,A} || {function,_,F,A,_} <- Mpf],
     [{attribute,0,export,Exp}|Mpf].
 
+-spec get_optional_callbacks([{atom(), term()}]) -> [{atom(), arity()}].
 get_optional_callbacks(Attrs) ->
     L = [O || {optional_callbacks,O} <- Attrs, is_fa_list(O)],
     lists:append(L).
 
+-spec is_fa_list(term()) -> boolean().
 is_fa_list([{FuncName, Arity}|L])
   when is_atom(FuncName), is_integer(Arity), Arity >= 0 ->
     is_fa_list(L);
 is_fa_list([]) -> true;
 is_fa_list(_) -> false.
 
+-spec module_predef_func_beh_info([{atom(), arity()}], [{atom(), arity()}]) -> [erl_parse:af_function_decl()].
 module_predef_func_beh_info([], _) ->
     [];
 module_predef_func_beh_info(Callbacks0, OptionalCallbacks) ->
@@ -559,21 +565,25 @@ module_predef_func_beh_info(Callbacks0, OptionalCallbacks) ->
       [{clause,0,[{atom,0,callbacks}],[],[List]},
        {clause,0,[{atom,0,optional_callbacks}],[],[OptionalList]}]}].
 
-make_list([]) -> {nil,0};
+-spec make_list([{atom(), arity()}]) -> erl_parse:abstract_expr().
+make_list([]) -> {nil,erl_anno:from_term(0)};
 make_list([{Name,Arity}|Rest]) ->
-    {cons,0,
-     {tuple,0,
-      [{atom,0,Name},
-       {integer,0,Arity}]},
+    Anno0 = erl_anno:from_term(0),
+    {cons,Anno0,
+     {tuple,Anno0,
+      [{atom,Anno0,Name},
+       {integer,Anno0,Arity}]},
      make_list(Rest)}.
 
+-spec module_predef_funcs_mod_info(module()) -> [erl_parse:af_function_decl()].
 module_predef_funcs_mod_info(Mod) ->
-    ModAtom = {atom,0,Mod},
-    [{function,0,module_info,0,
-      [{clause,0,[],[],
-        [{call,0,{remote,0,{atom,0,erlang},{atom,0,get_module_info}},
+    Anno0 = erl_anno:from_term(0),
+    ModAtom = {atom,Anno0,Mod},
+    [{function,Anno0,module_info,0,
+      [{clause,Anno0,[],[],
+        [{call,Anno0,{remote,Anno0,{atom,Anno0,erlang},{atom,Anno0,get_module_info}},
           [ModAtom]}]}]},
-     {function,0,module_info,1,
-      [{clause,0,[{var,0,'X'}],[],
-        [{call,0,{remote,0,{atom,0,erlang},{atom,0,get_module_info}},
-          [ModAtom,{var,0,'X'}]}]}]}].
+     {function,Anno0,module_info,1,
+      [{clause,Anno0,[{var,Anno0,'X'}],[],
+        [{call,Anno0,{remote,Anno0,{atom,Anno0,erlang},{atom,Anno0,get_module_info}},
+          [ModAtom,{var,Anno0,'X'}]}]}]}].
