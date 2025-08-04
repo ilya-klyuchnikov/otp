@@ -87,7 +87,7 @@
 -record(c_module, {anno=[] :: list(), name :: cerl:c_literal(),
 		   exports :: [cerl:cerl()],
 		   attrs :: [{cerl:cerl(), cerl:cerl()}],
-		   defs :: [{cerl:cerl(), cerl:cerl()}]}).
+		   defs :: [{cerl:c_var(), cerl:cerl()}]}).
 
 -record(c_opaque, {anno=[] :: list(), val :: any()}).
 
@@ -98,7 +98,7 @@
 		    timeout :: cerl:cerl(),
 		    action :: cerl:cerl()}).
 
--record(c_seq, {anno=[] :: list(), arg :: cerl:cerl() | any(), % TODO
+-record(c_seq, {anno=[] :: list(), arg :: cerl:cerl(), % TODO
 		body :: cerl:cerl()}).
 
 -record(c_try, {anno=[] :: list(), arg :: cerl:cerl(),

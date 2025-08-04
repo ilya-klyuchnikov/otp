@@ -135,8 +135,8 @@ function `type/1`.
          update_c_bitstr/5, update_c_bitstr/6
         ]).
 
--export_type([c_alias/0, c_binary/0, c_bitstr/0, c_call/0, c_case/0, c_clause/0, c_cons/0, c_fun/0,
-	      c_let/0, c_literal/0, c_map/0, c_map_pair/0,
+-export_type([c_alias/0, c_apply/0, c_binary/0, c_bitstr/0, c_call/0, c_case/0, c_clause/0, c_cons/0, c_fun/0,
+	      c_let/0, c_letrec/0, c_literal/0, c_map/0, c_map_pair/0,
 	      c_module/0, c_opaque/0, c_primop/0, c_tuple/0,
 	      c_values/0, c_var/0, cerl/0, var_name/0, dtype/0, c_lct/0]).
 
