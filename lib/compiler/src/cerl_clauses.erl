@@ -46,6 +46,7 @@ Syntax trees are defined in the module `m:cerl`.
 	       seq_body/1, try_arg/1, type/1, values_es/1]).
 
 -type cerl() :: cerl:cerl().
+-export_type([match_ret/0]).
 
 %% ---------------------------------------------------------------------
 
