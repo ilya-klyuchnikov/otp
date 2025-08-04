@@ -23,6 +23,7 @@
 %%
 
 -module(beam_utils).
+-compile(warn_missing_spec_all).
 -moduledoc false.
 -export([replace_labels/4,split_even/1]).
 
@@ -50,20 +51,24 @@
 -spec replace_labels([instruction()],
                      [instruction()],
                      #{beam_asm:label() => beam_asm:label()},
-                     fun((beam_asm:label()) -> term())) -> [instruction()].
+                     fun((beam_asm:label()) -> beam_asm:label())) -> [instruction()].
 replace_labels(Is, Acc, D, Fb) ->
     replace_labels_1(Is, Acc, D, Fb).
 
 %% split_even/1
 %% [1,2,3,4,5,6] -> {[1,3,5],[2,4,6]}
 
--spec split_even(list()) -> {list(),list()}.
+-spec split_even([A]) -> {[A], [A]}.
 
 split_even(Rs) -> split_even(Rs, [], []).
 
 %%%
 %%% Local functions.
 %%%
+-spec replace_labels_1([instruction()],
+                       [instruction()],
+                       #{beam_asm:label() => beam_asm:label()},
+                       fun((beam_asm:label()) -> beam_asm:label())) -> [instruction()].
 replace_labels_1([{test,Test,{f,Lbl},Ops}|Is], Acc, D, Fb) ->
     I = {test,Test,{f,label(Lbl, D, Fb)},Ops},
     replace_labels_1(Is, [I | Acc], D, Fb);
@@ -119,12 +124,14 @@ replace_labels_1([I|Is], Acc, D, Fb) ->
     replace_labels_1(Is, [I|Acc], D, Fb);
 replace_labels_1([], Acc, _, _) -> Acc.
 
+-spec label(beam_asm:label(), #{beam_asm:label() => beam_asm:label()}, fun((beam_asm:label()) -> beam_asm:label())) -> beam_asm:label().
 label(Old, D, Fb) ->
     case D of
         #{Old := New} -> New;
         _ -> Fb(Old)
     end.
 
+-spec split_even([A], [A], [A]) -> {[A], [A]}.
 split_even([], Ss, Ds) ->
     {reverse(Ss),reverse(Ds)};
 split_even([S,D|Rs], Ss, Ds) ->
