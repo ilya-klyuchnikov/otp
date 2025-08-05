@@ -22,6 +22,7 @@
 %% Purpose : Core Erlang (naive) prettyprinter
 
 -module(core_pp).
+-compile(warn_missing_spec_all).
 -moduledoc false.
 
 -export([format/1,format_all/1]).
@@ -41,6 +42,9 @@
 	       body_indent = 4 :: integer(),
 	       line = 0        :: integer(),
 	       clean = true    :: boolean()}).
+-type ctxt() :: #ctxt{}.
+-type pp_fun() :: fun((cerl:cerl(), ctxt()) -> iolist()).
+-type pp_fun(Thing) :: fun((Thing, ctxt()) -> iolist()).
 
 -define(TAB_WIDTH, 8).
 
@@ -54,6 +58,7 @@ format(Node) ->
 format_all(Node) ->
     format(Node, #ctxt{clean=false}).
 
+-spec maybe_anno(cerl:cerl(), pp_fun(), ctxt()) -> iolist().
 maybe_anno(Node, Fun, #ctxt{clean=false}=Ctxt) ->
     As = cerl:get_ann(Node),
     maybe_anno(Node, Fun, Ctxt, As);
@@ -78,6 +83,7 @@ maybe_anno(Node, Fun, #ctxt{clean=true}=Ctxt) ->
 	    end
     end.
 
+-spec needs_line_anno(cerl:cerl()) -> boolean().
 needs_line_anno(Node) ->
     case (cerl:is_c_primop(Node) andalso
           cerl:concrete(cerl:primop_name(Node))) of
@@ -86,6 +92,7 @@ needs_line_anno(Node) ->
         _ -> false
     end.
 
+-spec maybe_anno(cerl:cerl(), pp_fun(), ctxt(), [term()]) -> iolist().
 maybe_anno(Node, Fun, Ctxt, []) ->
     Fun(Node, Ctxt);
 maybe_anno(Node, Fun, Ctxt, List) ->
@@ -97,6 +104,7 @@ maybe_anno(Node, Fun, Ctxt, List) ->
      "-| ",format_anno(List, Ctxt2)," )"
     ].
 
+-spec format_anno(term(), ctxt()) -> iolist().
 format_anno([_|_]=List, Ctxt) ->
     [$[,format_anno_list(List, Ctxt),$]];
 format_anno({file,Name}, _Ctxt) ->
@@ -109,11 +117,13 @@ format_anno(Val, Ctxt) when is_atom(Val) ->
 format_anno(Val, Ctxt) when is_integer(Val) ->
     format_1(#c_literal{val=Val}, Ctxt).
 
+-spec format_anno_list([term()], ctxt()) -> iolist().
 format_anno_list([H|[_|_]=T], Ctxt) ->
     [format_anno(H, Ctxt), $, | format_anno_list(T, Ctxt)];
 format_anno_list([H], Ctxt) ->
     format_anno(H, Ctxt).
 
+-spec strip_line([term()]) -> [term()].
 strip_line([A | As]) when is_integer(A) ->
     strip_line(As);
 strip_line([{A,C} | As]) when is_integer(A), is_integer(C) ->
@@ -125,6 +135,7 @@ strip_line([A | As]) ->
 strip_line([]) ->
     [].
 
+-spec get_line([term()]) -> integer() | none.
 get_line([L | _As]) when is_integer(L) ->
     L;
 get_line([{L, _Column} | _As]) when is_integer(L) ->
@@ -134,9 +145,11 @@ get_line([_ | As]) ->
 get_line([]) ->
     none.
 
+-spec format(cerl:cerl(), ctxt()) -> iolist().
 format(Node, Ctxt) ->
     maybe_anno(Node, fun format_1/2, Ctxt).
 
+-spec format_1(cerl:cerl(), ctxt()) -> iolist().
 format_1(#c_literal{val=[]}, _) -> "[]";
 format_1(#c_literal{val=I}, _) when is_integer(I) -> integer_to_list(I);
 format_1(#c_literal{val=F}, _) when is_float(F) -> float_to_list(F);
@@ -377,12 +390,14 @@ format_1(#c_module{name=N,exports=Es,attrs=As,defs=Ds}, Ctxt) ->
 format_1(#c_opaque{val=V}, Ctxt) ->
     ["%% Opaque: ", format_1(#c_literal{val=V}, Ctxt)].
 
+-spec format_funcs([{cerl:c_var(), cerl:cerl()}], ctxt()) -> iolist().
 format_funcs(Fs, Ctxt) ->
     format_vseq(Fs,
 		"", "",
 		Ctxt,
 		fun format_def/2).
 
+-spec format_def({cerl:cerl(), cerl:cerl()}, ctxt()) -> iolist().
 format_def({N,V}, Ctxt0) ->
     Ctxt1 = add_indent(Ctxt0, Ctxt0#ctxt.body_indent),
     [format(N, Ctxt0),
@@ -392,14 +407,17 @@ format_def({N,V}, Ctxt0) ->
     ].
 
     
+-spec format_values([cerl:cerl()], ctxt()) -> iolist().
 format_values(Vs, Ctxt) ->
     [$<,
      format_hseq(Vs, ",", add_indent(Ctxt, 1), fun format/2),
      $>].
 
+-spec format_bitstr(cerl:cerl(), ctxt()) -> iolist().
 format_bitstr(Node, Ctxt) ->
     maybe_anno(Node, fun do_format_bitstr/2, Ctxt).
 
+-spec do_format_bitstr(cerl:cerl(), ctxt()) -> iolist().
 do_format_bitstr(#c_bitstr{val=V,size=S,unit=U,type=T,flags=Fs}, Ctxt0) ->
     Vs = [S, U, T, Fs],
     Ctxt1 = add_indent(Ctxt0, 2),
@@ -407,12 +425,15 @@ do_format_bitstr(#c_bitstr{val=V,size=S,unit=U,type=T,flags=Fs}, Ctxt0) ->
     Ctxt2 = add_indent(Ctxt1, width(Val, Ctxt1) + 2),
     ["#<", Val, ">(", format_hseq(Vs,",", Ctxt2, fun format/2), $)].
 
+-spec format_clauses([cerl:c_clause()], ctxt()) -> iolist().
 format_clauses(Cs, Ctxt) ->
     format_vseq(Cs, "", "", Ctxt, fun format_clause/2).
 
+-spec format_clause(cerl:cerl(), ctxt()) -> iolist().
 format_clause(Node, Ctxt) ->
     maybe_anno(Node, fun format_clause_1/2, Ctxt).
 
+-spec format_clause_1(cerl:cerl(), ctxt()) -> iolist().
 format_clause_1(#c_clause{pats=Ps,guard=G,body=B}, Ctxt) ->
     Ptxt = format_values(Ps, Ctxt),
     Ctxt2 = add_indent(Ctxt, Ctxt#ctxt.body_indent),
@@ -429,12 +450,15 @@ format_clause_1(#c_clause{pats=Ps,guard=G,body=B}, Ctxt) ->
      nl_indent(Ctxt2) | format(B, Ctxt2)
     ].
 
+-spec is_trivial_guard(cerl:cerl()) -> boolean().
 is_trivial_guard(#c_literal{val=Val}) when is_atom(Val) -> true;
 is_trivial_guard(_) -> false.
-    
+
+-spec format_guard(cerl:cerl(), ctxt()) -> iolist().
 format_guard(Node, Ctxt) ->
     maybe_anno(Node, fun format_guard_1/2, Ctxt).
 
+-spec format_guard_1(cerl:cerl(), ctxt()) -> iolist().
 format_guard_1(#c_call{module=M,name=N,args=As}, Ctxt0) ->
     Ctxt1 = add_indent(Ctxt0, 5),		%"call "
     Mod = format(M, Ctxt1),
@@ -450,6 +474,7 @@ format_guard_1(E, Ctxt) -> format_1(E, Ctxt).	%Anno already done
 %% format_hseq([Thing], Separator, Context, Fun) -> Txt.
 %%  Format a sequence horizontally on the same line with Separator between.
 
+-spec format_hseq([Thing], iolist(), ctxt(), pp_fun(Thing)) -> iolist().
 format_hseq([H], _, Ctxt, Fun) ->
     Fun(H, Ctxt);
 format_hseq([H|T], Sep, Ctxt, Fun) ->
@@ -463,6 +488,7 @@ format_hseq([], _, _, _) -> "".
 %%  to the beginning of each line and LineSuffix to the end of each
 %%  line.  No prefix on the first line or suffix on the last line.
 
+-spec format_vseq([Thing], iolist(), iolist(), ctxt(), pp_fun(Thing)) -> iolist().
 format_vseq([H], _Pre, _Suf, Ctxt, Fun) ->
     Fun(H, Ctxt);
 format_vseq([H|T], Pre, Suf, Ctxt, Fun) ->
@@ -470,6 +496,7 @@ format_vseq([H|T], Pre, Suf, Ctxt, Fun) ->
      format_vseq(T, Pre, Suf, Ctxt, Fun)];
 format_vseq([], _, _, _, _) -> "".
 
+-spec format_list_tail(cerl:cerl(), ctxt()) -> iolist().
 format_list_tail(#c_literal{anno=[],val=[]}, _) -> "]";
 format_list_tail(#c_cons{anno=[],hd=H,tl=T}, Ctxt) ->
     Txt = [$,|format(H, Ctxt)],
@@ -478,12 +505,14 @@ format_list_tail(#c_cons{anno=[],hd=H,tl=T}, Ctxt) ->
 format_list_tail(Tail, Ctxt) ->
     ["|",format(Tail, add_indent(Ctxt, 1)),"]"].
 
+-spec format_map_pair(string(), cerl:cerl(), cerl:cerl(), ctxt()) -> iolist().
 format_map_pair(Op, K, V, Ctxt0) ->
     Ctxt1 = add_indent(Ctxt0, 1),
     Txt = format(K, Ctxt1),
     Ctxt2 = add_indent(Ctxt0, width(Txt, Ctxt1)),
     [Txt,Op,format(V, Ctxt2)].
 
+-spec indent(ctxt()) -> string().
 indent(#ctxt{indent=N}) ->
     if
 	N =< 0 ->
@@ -492,8 +521,10 @@ indent(#ctxt{indent=N}) ->
            lists:duplicate(N div ?TAB_WIDTH, $\t) ++ spaces(N rem ?TAB_WIDTH)
     end.
 
+-spec nl_indent(ctxt()) -> iolist().
 nl_indent(Ctxt) -> [$\n|indent(Ctxt)].
 
+-spec spaces(integer()) -> string().
 spaces(0) -> "";
 spaces(1) -> " ";
 spaces(2) -> "  ";
@@ -504,9 +535,11 @@ spaces(6) -> "      ";
 spaces(7) -> "       ".
 
 %% Undo indentation done by nl_indent/1.
+-spec unindent(iolist(), ctxt()) -> iolist().
 unindent(T, Ctxt) ->
     unindent(T, Ctxt#ctxt.indent, []).
 
+-spec unindent(iolist(), integer(), iolist()) -> iolist().
 unindent(T, N, C) when N =< 0 ->
     [T|C];
 unindent([$\s|T], N, C) ->
@@ -522,9 +555,11 @@ unindent([L|T], N, C) when is_list(L) ->
     unindent(L, N, [T|C]).
 
 
+-spec width(iolist(), ctxt()) -> integer().
 width(Txt, Ctxt) ->
     width(Txt, 0, Ctxt, []).
 
+-spec width(iolist(), integer(), ctxt(), iolist()) -> integer().
 width([$\t|T], A, Ctxt, C) ->
     width(T, A + ?TAB_WIDTH, Ctxt, C);
 width([$\n|T], _, Ctxt, C) ->
@@ -537,12 +572,15 @@ width([], A, Ctxt, [H|T]) ->
     width(H, A, Ctxt, T);
 width([], A, _, []) -> A.
 
+-spec add_indent(ctxt(), integer()) -> ctxt().
 add_indent(Ctxt, Dx) ->
     Ctxt#ctxt{indent = Ctxt#ctxt.indent + Dx}.
 
+-spec core_atom(atom()) -> iolist().
 core_atom(A) -> io_lib:write_string(atom_to_list(A), $').
 
 
+-spec is_simple_term(cerl:cerl()) -> boolean().
 is_simple_term(#c_tuple{es=Es}) ->
     length(Es) < 4 andalso lists:all(fun is_simple_term/1, Es);
 is_simple_term(#c_var{}) -> true;
@@ -550,6 +588,7 @@ is_simple_term(#c_literal{val=[_|_]}) -> false;
 is_simple_term(#c_literal{val=V}) -> not is_tuple(V);
 is_simple_term(_) -> false.
 
+-spec segs_from_bitstring(bitstring()) -> [cerl:c_bitstr()].
 segs_from_bitstring(<<H,T/bitstring>>) ->
     [#c_bitstr{val=#c_literal{val=H},
 	       size=#c_literal{val=8},
@@ -567,10 +606,12 @@ segs_from_bitstring(Bitstring) ->
 	      type=#c_literal{val=integer},
 	      flags=#c_literal{val=[unsigned,big]}}].
 
+-spec clean_anno_carefully(cerl:cerl()) -> cerl:cerl().
 clean_anno_carefully(Node) ->
     Anno = clean_anno_carefully_1(cerl:get_ann(Node)),
     cerl:set_ann(Node, Anno).
 
+-spec clean_anno_carefully_1([term()]) -> [term()].
 clean_anno_carefully_1([letrec_goto=Keep|Annos]) ->
     [Keep|clean_anno_carefully_1(Annos)];
 clean_anno_carefully_1([_|Annos]) ->
