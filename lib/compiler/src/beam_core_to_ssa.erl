@@ -60,6 +60,7 @@
 %%
 
 -module(beam_core_to_ssa).
+-eqwalizer({unlimited_refinement, umatch/3}).
 -moduledoc false.
 
 -export([module/2,format_error/1]).
@@ -82,14 +83,14 @@
 %% Internal records created by the first pass and eliminated in the
 %% second pass.
 
--record(ivalues, {args}).
+-record(ivalues, {args :: [katomic()]}).
 -record(iset, {vars,arg}).
 -record(ilet, {vars,arg,body}).
--record(iletrec, {defs}).
--record(ialias, {vars,pat}).
+-record(ialias, {vars :: [kexpr()],pat}).
 
--record(ifun, {anno=[],vars,body}).
--record(iclause, {anno=[],sub,pats,guard,body}).
+-record(ifun, {anno=[] :: anno(), vars :: [beam_ssa:b_var()], body :: kexpr()}).
+-record(iletrec, {defs :: [{atom(), #ifun{}}]}).
+-record(iclause, {anno=[] :: anno(), sub :: sub(), pats, guard, body}).
 
 %% The following records are used to represent complex terms used for
 %% matching. (Construction of those term types is translated directly
@@ -100,9 +101,9 @@
 -record(cg_map_pair, {key,val}).
 -record(cg_cons, {hd,tl}).
 -record(cg_binary, {segs}).
--record(cg_bin_seg, {size,unit,type,flags,seg,next}).
--record(cg_bin_int, {size,unit,flags,val,next}).
 -record(cg_bin_end, {}).
+-record(cg_bin_seg, {size,unit,type,flags,seg,next :: beam_ssa:b_var() | #cg_bin_seg{} | #cg_bin_end{}}).
+-record(cg_bin_int, {size,unit,flags,val,next}).
 
 %% Other internal records.
 
@@ -120,12 +121,12 @@
 
 -record(cg_match, {body,ret=[]}).
 -record(cg_alt, {anno=[],first,then}).
--record(cg_select, {anno=[],var,types}).
--record(cg_type_clause, {anno=[],type,values}).
--record(cg_val_clause, {anno=[],val,body}).
--record(cg_guard, {anno=[],clauses}).
+-record(cg_type_clause, {anno=[] :: anno(), type :: con() | {bif, atom()},values}).
+-record(cg_select, {anno=[] :: anno(), var :: beam_ssa:b_var(), types :: [#cg_type_clause{}]}).
+-record(cg_val_clause, {anno=[] :: anno(), val, body}).
 -record(cg_guard_clause, {guard,body}).
--record(cg_test, {op,args}).
+-record(cg_guard, {anno=[],clauses :: [#cg_guard_clause{}]}).
+-record(cg_test, {op :: atom(),args}).
 
 -record(cg_break, {args=[] :: [beam_ssa:value()],
                    phi :: label() | 'undefined'}).
@@ -133,12 +134,50 @@
 -record(cg_unreachable, {}).
 -record(cg_succeeded, {set :: beam_ssa:b_set()}).
 
+-type kexpr() ::
+    beam_ssa:b_local() |
+    beam_ssa:b_var() |
+    beam_ssa:b_literal() |
+    beam_ssa:b_ret() |
+    beam_ssa:b_set() |
+    #ialias{} |
+    #ifun{} |
+    #iset{} |
+    #ilet{} |
+    #iletrec{} |
+    #ivalues{} |
+    #cg_alt{} |
+    #cg_binary{} |
+    #cg_break{} |
+    #cg_call{} |
+    #cg_catch{} |
+    #cg_cons{} |
+    #cg_goto{} |
+    #cg_guard{} |
+    #cg_internal{} |
+    #cg_letrec_goto{} |
+    #cg_map{} |
+    #cg_match{} |
+    #cg_opaque{} |
+    #cg_select{} |
+    #cg_succeeded{} |
+    #cg_test{} |
+    #cg_try{} |
+    #cg_tuple{}.
+
+-type katomic() :: beam_ssa:b_literal() | beam_ssa:b_var().
+
+-type sub() :: {#{todo() => todo()}, #{todo() => todo()}}.
+-type todo() :: dynamic().
+-type anno() :: list().
+
+-spec get_anno(term()) -> list().
 get_anno(#iclause{anno=Anno}) -> Anno;
 get_anno(#cg_alt{anno=Anno}) -> Anno;
 get_anno(#cg_guard{anno=Anno}) -> Anno;
 get_anno(#cg_select{anno=Anno}) -> Anno.
 
--type warning() :: {'failed' | 'nomatch', term()}.
+-type warning() :: {'failed' | 'nomatch' | string(), term()}.
 
 %% State record for the first two passes (formerly `v3_kernel`).
 -record(kern, {module :: atom(),       %Current module
@@ -147,15 +186,16 @@ get_anno(#cg_select{anno=Anno}) -> Anno.
                vcount=0,               %Variable counter
                fcount=0,               %Fun counter
                ds=sets:new() :: sets:set(), %Defined variables
-               funs=[],                         %Fun functions
-               free=#{},                        %Free variables
+               funs=[] :: [beam_ssa:b_function()] | ignore, %Fun functions
+               free=#{} :: #{{atom(), arity()} => [beam_ssa:b_var()]}, %Free variables
                ws=[]   :: [warning()],          %Warnings.
                no_min_max_bifs=false :: boolean(),
                beam_debug_info=false :: boolean()
               }).
+-type state() :: #kern{}.
 
 -spec module(cerl:c_module(), [compile:option()]) ->
-          {'ok', #b_module{}, [warning()]}.
+          {'ok', beam_ssa:b_module(), [warning()]}.
 
 module(#c_module{name=#c_literal{val=Mod},exports=Es,attrs=As,defs=Fs}, Options) ->
     Kas = attributes(As),
@@ -166,6 +206,7 @@ module(#c_module{name=#c_literal{val=Mod},exports=Es,attrs=As,defs=Fs}, Options)
                 no_min_max_bifs=NoMinMaxBifs,
                 beam_debug_info=DebugInfo},
     {Kfs,St} = mapfoldl(fun function/2, St0, Fs),
+    % eqwalizer:ignore - ignore value
     Body = Kfs ++ St#kern.funs,
     Code = #b_module{name=Mod,exports=Kes,attributes=Kas,body=Body},
     {ok,Code,sort(St#kern.ws)}.
@@ -183,6 +224,7 @@ format_error({failed,bad_call}) ->
 format_error({failed,bad_segment_size}) ->
     <<"binary construction will fail because the size of a segment is invalid">>.
 
+-spec attributes([{cerl:cerl(), cerl:cerl()}]) -> [{atom(), dynamic()}].
 attributes([{#c_literal{val=Name},#c_literal{val=Val}}|As]) ->
     case include_attribute(Name) of
         false ->
@@ -192,6 +234,7 @@ attributes([{#c_literal{val=Name},#c_literal{val=Val}}|As]) ->
     end;
 attributes([]) -> [].
 
+-spec include_attribute(atom()) -> boolean().
 include_attribute(type) -> false;
 include_attribute(spec) -> false;
 include_attribute(callback) -> false;
@@ -203,6 +246,7 @@ include_attribute(file) -> false;
 include_attribute(compile) -> false;
 include_attribute(_) -> true.
 
+-spec function({cerl:c_var(), cerl:cerl()}, state()) -> {beam_ssa:b_function(), state()}.
 function({#c_var{anno=Anno,name={F,Arity}=FA},Body0}, St0) ->
     try
         %% Find a suitable starting value for the counter
@@ -234,6 +278,7 @@ function({#c_var{anno=Anno,name={F,Arity}=FA},Body0}, St0) ->
             erlang:raise(Class, Error, Stack)
     end.
 
+-spec handle_debug_line(list(), cerl:cerl()) -> cerl:cerl().
 handle_debug_line([{debug_line,{Location,Index}}], #c_fun{body=Body}=Fun) ->
     DbgLine = #c_primop{anno=Location,
                         name=#c_literal{val=debug_line},
@@ -250,6 +295,7 @@ handle_debug_line(_, Fun) -> Fun.
 %%  Do the main sequence of a body.  A body ends in an atomic value or
 %%  values.  Must check if vector first so do expr.
 
+-spec body(cerl:cerl(), sub(), state()) -> {kexpr(), [kexpr()], state()}.
 body(#c_values{es=Ces}, Sub, St0) ->
     %% Do this here even if only in bodies.
     {Kes,Pe,St1} = atomic_list(Ces, Sub, St0),
@@ -261,6 +307,7 @@ body(Ce, Sub, St0) ->
 %%  We handle guards almost as bodies. The only special thing we
 %%  must do is to make the final Kexpr a #cg_test{}.
 
+-spec guard(cerl:cerl(), sub(), state()) -> {kexpr(), state()}.
 guard(G0, Sub, St0) ->
     {Ge0,Pre,St1} = expr(G0, Sub, St0),
     {Ge,St} = gexpr_test(Ge0, St1),
@@ -271,6 +318,7 @@ guard(G0, Sub, St0) ->
 %%  Must enter try blocks and isets and find the last Kexpr in them.
 %%  This must end in a recognised BEAM test!
 
+-spec gexpr_test(kexpr(), state()) -> {kexpr(), state()}.
 gexpr_test(#b_set{op={bif,F},args=Args}, St) ->
     Ar = length(Args),
     true = erl_internal:new_type_test(F, Ar) orelse
@@ -286,6 +334,7 @@ gexpr_test(#ilet{body=B0}=Iset, St0) ->
     {Iset#ilet{body=B1},St1};
 gexpr_test(Ke, St) -> gexpr_test_add(Ke, St).   %Add equality test
 
+-spec gexpr_test_add(kexpr(), state()) -> {kexpr(), state()}.
 gexpr_test_add(Ke, St0) ->
     {Ae,Ap,St1} = force_atomic(Ke, St0),
     {pre_seq(Ap, #cg_test{op='=:=',args=[Ae,#b_literal{val='true'}]}),St1}.
@@ -293,6 +342,7 @@ gexpr_test_add(Ke, St0) ->
 %% expr(Cexpr, Sub, State) -> {Kexpr,[PreKexpr],State}.
 %%  Convert a Core expression, flattening it at the same time.
 
+-spec expr(cerl:cerl(), sub(), state()) -> {kexpr(), [kexpr()], state()}.
 expr(#c_var{name={Name0,Arity}}, Sub, St) ->
     Name = get_fsub(Name0, Arity, Sub),
     {#b_local{name=#b_literal{val=Name},arity=Arity},[],St};
@@ -329,7 +379,9 @@ expr(#c_fun{anno=A,vars=Cvs}=Fun, Sub0, #kern{fargs=OldFargs}=St0) ->
     FilteredAnno = [Item || {debug_line,_}=Item <- A],
     #c_fun{body=Cb} = handle_debug_line(FilteredAnno, Fun),
     {Kvs,Sub1,St1} = pattern_list(Cvs, Sub0, St0),
+    % eqwalizer:ignore
     {Kb,Pb,St2} = body(Cb, Sub1, St1#kern{fargs=Kvs}),
+    % eqwalizer:ignore
     {#ifun{anno=A,vars=Kvs,body=pre_seq(Pb, Kb)},[],St2#kern{fargs=OldFargs}};
 expr(#c_seq{arg=Ca,body=Cb}, Sub, St0) ->
     {Ka,Pa,St1} = body(Ca, Sub, St0),
@@ -392,7 +444,7 @@ expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, St0) ->
 expr(#c_primop{anno=A0,name=#c_literal{val=debug_line},
                args=Cargs}, Sub, St0) ->
     {Args,Ap,St1} = atomic_list(Cargs, Sub, St0),
-    #b_set{anno=A1} = I0 = primop(debug_line, A0, Args),
+    I0 = #b_set{anno=A1} = primop(debug_line, A0, Args),
     {_,Alias} = Sub,
     A = A1#{alias => Alias},
     I = I0#b_set{anno=A},
@@ -418,6 +470,7 @@ expr(#c_catch{body=Cb}, Sub, St0) ->
 expr(#c_opaque{val=Check}, _Sub, St) ->
     {#cg_opaque{val=Check},[],St}.
 
+-spec primop(beam_ssa:op() | raise | recv_wait_timeout, list(), [katomic()]) -> kexpr().
 primop(raise, Anno, Args) ->
     primop_succeeded(resume, Anno, Args);
 primop(raw_raise, Anno, Args) ->
@@ -428,6 +481,7 @@ primop(Op, Anno, Args) when Op =:= recv_peek_message;
 primop(Op, Anno, Args) ->
     #b_set{anno=internal_anno(Anno),op=Op,args=Args}.
 
+-spec primop_succeeded(beam_ssa:op(), list(), [katomic()]) -> #cg_succeeded{}.
 primop_succeeded(Op, Anno0, Args) ->
     Anno = internal_anno(Anno0),
     Set = #b_set{anno=Anno,op=Op,args=Args},
@@ -436,6 +490,13 @@ primop_succeeded(Op, Anno0, Args) ->
 %% Implement letrec in the traditional way as a local
 %% function for each definition in the letrec.
 
+-spec letrec_local_function(
+    list(),
+    [{cerl:c_var(), cerl:cerl()}],
+    cerl:cerl(),
+    sub(),
+    state()
+) -> {kexpr(), [kexpr()], state()}.
 letrec_local_function(A, Cfs, Cb, Sub0, St0) ->
     %% Make new function names and store substitution.
     {Fs0,{Sub1,St1}} =
@@ -451,6 +512,7 @@ letrec_local_function(A, Cfs, Cb, Sub0, St0) ->
     %% Run translation on functions and body.
     {Fs1,St2} = mapfoldl(fun ({N,Fd0}, S1) ->
                                  {Fd1,[],St2} = expr(Fd0, Sub1, S1),
+                                % eqwalizer:ignore
                                  Fd = Fd1#ifun{anno=A},
                                  {{N,Fd},St2}
                          end, St1, Fs0),
@@ -460,6 +522,12 @@ letrec_local_function(A, Cfs, Cb, Sub0, St0) ->
 %% Implement letrec with the single definition as a label and each
 %% apply of it as a goto.
 
+-spec letrec_goto(
+    [{cerl:c_var(), cerl:cerl()}],
+    cerl:cerl(),
+    sub(),
+    state()
+) -> {kexpr(), [kexpr()], state()}.
 letrec_goto([{#c_var{name={Name,Arity}},Cfail}], Cb, Sub0, St0) ->
     {Label,St1} = new_var_name(St0),
     #c_fun{vars=FunVars,body=FunBody} = Cfail,
@@ -486,8 +554,12 @@ letrec_goto([{#c_var{name={Name,Arity}},Cfail}], Cb, Sub0, St0) ->
 %%  Translate match_fail primops, paying extra attention to `function_clause`
 %%  errors that may have been inlined from other functions.
 
+-spec translate_match_fail(
+    cerl:cerl(), sub(), list(), state()
+) -> {kexpr(), [kexpr()], state()}.
 translate_match_fail(Arg, Sub, Anno, St0) ->
     {Cargs,ExtraAnno,St1} =
+        % eqwalizer:ignore
         case {cerl:data_type(Arg),cerl:data_es(Arg)} of
             {tuple,[#c_literal{val=function_clause}|_]=As} ->
                 translate_fc_args(As, Sub, Anno, St0);
@@ -501,6 +573,9 @@ translate_match_fail(Arg, Sub, Anno, St0) ->
     Set = #b_set{anno=SsaAnno,op=match_fail,args=Args},
     {#cg_succeeded{set=Set},Ap,St}.
 
+-spec translate_fc_args(
+    [cerl:cerl()], sub(), list(), state()
+) -> {[cerl:cerl()], list(), state()}.
 translate_fc_args(As, Sub, Anno, #kern{fargs=Fargs}=St0) ->
     {ExtraAnno, St} =
         case same_args(As, Fargs, Sub) of
@@ -526,16 +601,23 @@ translate_fc_args(As, Sub, Anno, #kern{fargs=Fargs}=St0) ->
         end,
     {As, ExtraAnno, St}.
 
+-spec same_args([cerl:cerl()], [beam_ssa:b_var()], sub()) -> boolean().
 same_args([#c_var{name=Cv}|Vs], [#b_var{name=Kv}|As], Sub) ->
     get_vsub(Cv, Sub) =:= Kv andalso same_args(Vs, As, Sub);
 same_args([], [], _Sub) -> true;
 same_args(_, _, _) -> false.
 
+-spec expr_map(
+    list(), cerl:c_var() | cerl:c_literal(), [cerl:cerl()], sub(), state()
+) -> {kexpr(), [kexpr()], state()}.
 expr_map(A, Var0, Ces, Sub, St0) ->
     {Var,Mps,St1} = expr(Var0, Sub, St0),
     {Km,Eps,St2} = map_split_pairs(A, Var, Ces, Sub, St1),
     {Km,Eps++Mps,St2}.
 
+-spec map_split_pairs(
+    list(), kexpr(), [cerl:cerl()], sub(), state()
+) -> {kexpr(), [kexpr()], state()}.
 map_split_pairs(A, Var, Ces, Sub, St0) ->
     %% 1. Force variables.
     %% 2. Group adjacent pairs with literal keys.
@@ -551,6 +633,9 @@ map_split_pairs(A, Var, Ces, Sub, St0) ->
               end, {[],[],St0}, Ces),
     map_split_pairs_1(A, Var, Pairs, Esp, St1).
 
+-spec map_split_pairs_1(
+    list(), kexpr(), [{assoc | exact, katomic(), katomic()}], [kexpr()], state()
+) -> {kexpr(), [kexpr()], state()}.
 map_split_pairs_1(A, Map0, [{Op,Key,Val}|Pairs1]=Pairs0, Esp0, St0) ->
     {Map1,Em,St1} = force_atomic(Map0, St0),
     case Key of
@@ -570,6 +655,9 @@ map_split_pairs_1(A, Map0, [{Op,Key,Val}|Pairs1]=Pairs0, Esp0, St0) ->
 map_split_pairs_1(_, Map, [], Esp, St0) ->
     {Map,Esp,St0}.
 
+-spec map_group_pairs(
+    list(), katomic(), [{assoc | exact, katomic(), katomic()}], [kexpr()], state()
+) -> {kexpr(), [kexpr()], state()}.
 map_group_pairs(A, Var, Pairs0, Esp, St0) ->
     Pairs = map_remove_dup_keys(Pairs0),
     Assoc = [[K,V] || {_,{assoc,K,V}} <- Pairs],
@@ -585,6 +673,7 @@ map_group_pairs(A, Var, Pairs0, Esp, St0) ->
             {ssa_map(A, exact, Mvar, Exact),Esp ++ Em,St1}
     end.
 
+-spec ssa_map(anno(), assoc | exact, katomic(), [[katomic()]]) -> beam_ssa:b_set() | #cg_succeeded{}.
 ssa_map(A, Op, SrcMap, Pairs) ->
     FlatList = append(Pairs),
     Args = [#b_literal{val=Op},SrcMap|FlatList],
@@ -595,9 +684,15 @@ ssa_map(A, Op, SrcMap, Pairs) ->
         exact -> #cg_succeeded{set=Set}
     end.
 
+-spec map_remove_dup_keys(
+    [{assoc | exact, katomic(), katomic()}]
+) -> [{katomic(), {exact | assoc, katomic(), katomic()}}].
 map_remove_dup_keys(Es) ->
     map_remove_dup_keys(Es, #{}).
 
+-spec map_remove_dup_keys(
+    [{assoc | exact, katomic(), katomic()}], #{katomic() => {exact | assoc, katomic(), katomic()}}
+) -> [{katomic(), {exact | assoc, katomic(), katomic()}}].
 map_remove_dup_keys([{assoc,K,V}|Es0], Used0) ->
     Op = case Used0 of
              #{K := {exact,_,_}} -> exact;
@@ -620,6 +715,7 @@ map_remove_dup_keys([], Used) ->
 %% match_vars(Kexpr, State) -> {[Kvar],[PreKexpr],State}.
 %%  Force return from body into a list of variables.
 
+-spec match_vars(kexpr(), state()) -> {[beam_ssa:b_var()], [#iset{}], state()}.
 match_vars(#ivalues{args=As}, St) ->
     foldr(fun (Ka, {Vs,Vsp,St0}) ->
                   {V,Vp,St1} = force_variable(Ka, St0),
@@ -632,6 +728,13 @@ match_vars(Ka, St0) ->
 %% c_apply(A, Op, [Carg], Sub, State) -> {Kexpr,[PreKexpr],State}.
 %%  Transform application.
 
+-spec c_apply(
+    anno(),
+    cerl:cerl(),
+    [cerl:cerl()],
+    sub(),
+    state()
+) -> {kexpr(), [kexpr()], state()}.
 c_apply(A, #c_var{name={F0,Ar}}, Cargs, Sub, St0) ->
     {Args,Ap,St1} = atomic_list(Cargs, Sub, St0),
     case get_fsub(F0, Ar, Sub) of
@@ -646,32 +749,34 @@ c_apply(A, Cop, Cargs, Sub, St0) ->
     {Args,Ap,St2} = atomic_list(Cargs, Sub, St1),
     {#cg_call{anno=A,op=Kop,args=Args},Op ++ Ap,St2}.
 
+-spec flatten_seq(kexpr()) -> [kexpr()].
 flatten_seq(#ilet{vars=Vs,arg=Arg,body=B}) ->
     [#iset{vars=Vs,arg=Arg}|flatten_seq(B)];
 flatten_seq(Ke) -> [Ke].
 
+-spec pre_seq([kexpr()], kexpr()) -> kexpr().
 pre_seq([#iset{vars=Vs,arg=Arg}|Ps], K) ->
     #ilet{vars=Vs,arg=Arg,body=pre_seq(Ps, K)};
 pre_seq([P|Ps], K) ->
     #ilet{vars=[],arg=P,body=pre_seq(Ps, K)};
 pre_seq([], K) -> K.
 
-%% atomic(Cexpr, Sub, State) -> {Katomic,[PreKexpr],State}.
 %%  Convert a Core expression making sure the result is atomic
 %%  (variable or literal).
 
+-spec atomic(cerl:cerl(), sub(), state()) -> {katomic(), [kexpr()], state()}.
 atomic(Ce, Sub, St0) ->
     {Ke,Kp,St1} = expr(Ce, Sub, St0),
     {Ka,Ap,St2} = force_atomic(Ke, St1),
     {Ka,Kp ++ Ap,St2}.
 
+-spec force_atomic(kexpr(), state()) -> {katomic(), [#iset{}], state()}.
 force_atomic(#b_literal{}=Ke, St) ->
     {Ke,[],St};
 force_atomic(Ke, St) ->
     force_variable(Ke, St).
 
-%% atomic_list([Cexpr], Sub, State) -> {[Kexpr],[PreKexpr],State}.
-
+-spec atomic_list([cerl:cerl()], sub(), state()) -> {[katomic()], [kexpr()], state()}.
 atomic_list(Ces, Sub, St) ->
     foldr(fun (Ce, {Kes,Esp,St0}) ->
                   {Ke,Ep,St1} = atomic(Ce, Sub, St0),
@@ -682,6 +787,7 @@ atomic_list(Ces, Sub, St) ->
 %%% Construction of binaries.
 %%%
 
+-spec expr_binary(anno(), [cerl:c_bitstr()], sub(), state()) -> {#cg_succeeded{}, [kexpr()], state()}.
 expr_binary(Anno, Segs0, Sub, St0) ->
     {Segs1,Ep,St1} = atomic_bin(Segs0, Sub, St0),
     Segs = case Segs1 of
@@ -698,23 +804,30 @@ expr_binary(Anno, Segs0, Sub, St0) ->
     Build = #cg_succeeded{set=#b_set{anno=LineAnno,op=bs_create_bin,args=Segs}},
     {Build,Ep,St1}.
 
+-spec atomic_bin([cerl:c_bitstr()], sub(), state()) -> {[katomic()], [kexpr()], state()}.
 atomic_bin([#c_bitstr{anno=A,val=E0,size=S0,unit=U0,type=T,flags=Fs0}|Es0],
            Sub, St0) ->
     {E,Ap1,St1} = atomic(E0, Sub, St0),
     {S1,Ap2,St2} = atomic(S0, Sub, St1),
     validate_bin_element_size(S1, A),
+    % eqwalizer:ignore - U0 :: c_literal()
     U1 = cerl:concrete(U0),
+    % eqwalizer:ignore - Fs0 :: c_literal()
     Fs1 = cerl:concrete(Fs0),
     {Es,Ap3,St3} = atomic_bin(Es0, Sub, St2),
     {ssa_bin_segment(A, T, E, S1, U1, Fs1) ++ Es,
      Ap1++Ap2++Ap3,St3};
 atomic_bin([], _Sub, St) -> {[],[],St}.
 
+-spec ssa_bin_segment(
+    anno(), cerl:cerl(), katomic(), katomic(), dynamic(), dynamic()
+) -> [katomic()].
 ssa_bin_segment(Anno, Type, Src, Size, U, Flags0) ->
     Seg = case lists:keyfind(segment, 1, Anno) of
               false -> [];
               {segment,_}=Seg0 -> [Seg0]
           end,
+    % eqwalizer:ignore Type :: c_literal
     TypeArg = #b_literal{val=cerl:concrete(Type)},
     Unit = case U of
                undefined -> 0;
@@ -724,6 +837,7 @@ ssa_bin_segment(Anno, Type, Src, Size, U, Flags0) ->
     UnitFlags = #b_literal{val=[Unit|Flags++Seg]},
     [TypeArg,UnitFlags,Src,Size].
 
+-spec validate_bin_element_size(katomic(), anno()) -> ok.
 validate_bin_element_size(#b_var{}, _Anno) -> ok;
 validate_bin_element_size(#b_literal{val=Val}, Anno) ->
     case Val of
@@ -735,6 +849,7 @@ validate_bin_element_size(#b_literal{val=Val}, Anno) ->
 
 %% Only keep the flags that have a meaning for binary construction and
 %% are distinct from the default value.
+-spec strip_bs_construct_flags([atom()]) -> [atom()].
 strip_bs_construct_flags(Flags) ->
     [Flag || Flag <- Flags,
              case Flag of
@@ -748,11 +863,13 @@ strip_bs_construct_flags(Flags) ->
 %% variable(Cexpr, Sub, State) -> {Kvar,[PreKexpr],State}.
 %%  Convert a Core expression making sure the result is a variable.
 
+-spec variable(cerl:cerl(), sub(), state()) -> {beam_ssa:b_var(), [kexpr()], state()}.
 variable(Ce, Sub, St0) ->
     {Ke,Kp,St1} = expr(Ce, Sub, St0),
     {Kv,Vp,St2} = force_variable(Ke, St1),
     {Kv,Kp ++ Vp,St2}.
 
+-spec force_variable(kexpr(), state()) -> {beam_ssa:b_var(), [#iset{}], state()}.
 force_variable(#b_var{}=Ke, St) ->
     {Ke,[],St};
 force_variable(Ke, St0) ->
@@ -763,6 +880,7 @@ force_variable(Ke, St0) ->
 %%  Convert patterns.  Variables shadow so rename variables that are
 %%  already defined.
 
+-spec pattern(cerl:cerl(), sub(), state()) -> {kexpr(), sub(), state()}.
 pattern(#c_var{name=V}, Sub, St0) ->
     case sets:is_element(V, St0#kern.ds) of
         true ->
@@ -771,6 +889,7 @@ pattern(#c_var{name=V}, Sub, St0) ->
              set_vsub(V, New, Sub),
              St1#kern{ds=sets:add_element(New, St1#kern.ds)}};
         false ->
+            % eqwalizer:ignore cerl:var_name versus beam_ssa:var_name
             {#b_var{name=V},Sub,
              St0#kern{ds=sets:add_element(V, St0#kern.ds)}}
     end;
@@ -795,11 +914,13 @@ pattern(#c_alias{var=Cv,pat=Cp}, Sub0, St0) ->
     {Kpat,Sub2,St2} = pattern(Cpat, Sub1, St1),
     {#ialias{vars=Kvs,pat=Kpat},Sub2,St2}.
 
+-spec flatten_alias(cerl:cerl()) -> {[cerl:cerl()], cerl:cerl()}.
 flatten_alias(#c_alias{var=V,pat=P}) ->
     {Vs,Pat} = flatten_alias(P),
     {[V|Vs],Pat};
 flatten_alias(Pat) -> {[],Pat}.
 
+-spec pattern_map_pairs([cerl:c_map_pair()], sub(), state()) -> {[#cg_map_pair{}], sub(), state()}.
 pattern_map_pairs(Ces0, Sub0, St0) ->
     {Kes,{Sub1,St1}} =
         mapfoldl(fun(#c_map_pair{key=Ck,val=Cv},{Subi0,Sti0}) ->
@@ -815,6 +936,7 @@ pattern_map_pairs(Ces0, Sub0, St0) ->
                 end, Kes),
     {Kes1,Sub1,St1}.
 
+-spec pattern_bin([cerl:c_bitstr()], sub(), state()) -> {#cg_bin_seg{} | #cg_bin_end{}, sub(), state()}.
 pattern_bin([#c_bitstr{val=E0,size=S0,unit=U0,type=T,flags=Fs0}|Es0],
             Sub0, St0) ->
     {S1,[],St1} = expr(S0, Sub0, St0),
@@ -828,10 +950,13 @@ pattern_bin([#c_bitstr{val=E0,size=S0,unit=U0,type=T,flags=Fs0}|Es0],
                 %% problems.
                 #b_literal{val=bad_size}
         end,
+    % eqwalizer:ignore U0 :: c_literal
     U = cerl:concrete(U0),
+    % eqwalizer:ignore Fs0 :: c_literal
     Fs = cerl:concrete(Fs0),
     {E,Sub1,St2} = pattern(E0, Sub0, St1),
     {Es,Sub,St3} = pattern_bin(Es0, Sub1, St2),
+    % eqwalizer:ignore T :: c_literal
     {build_bin_seg(S, U, cerl:concrete(T), Fs, E, Es),Sub,St3};
 pattern_bin([], Sub, St) ->
     {#cg_bin_end{},Sub,St}.
@@ -844,12 +969,17 @@ pattern_bin([], Sub, St) ->
 %%  more literals and group more clauses. Those integers may be "squeezed"
 %%  later into the largest integer possible.
 %%
+-spec build_bin_seg(
+    katomic(), dynamic(), dynamic(), dynamic(), kexpr(), #cg_bin_seg{} | #cg_bin_end{}
+) -> #cg_bin_seg{}.
 build_bin_seg(#b_literal{val=Bits}=Sz, U, integer=Type,
               [unsigned,big]=Flags, #b_literal{val=Int}=Seg, Next)
   when is_integer(Bits) ->
     Size = Bits * U,
+    % eqwalizer:ignore Int :: integer()
     case integer_fits_and_is_expandable(Int, Size) of
         true ->
+            % eqwalizer:ignore Int :: integer()
             build_bin_seg_integer_recur(Size, Int, Next);
         false ->
             #cg_bin_seg{size=Sz,unit=U,type=Type,
@@ -857,6 +987,7 @@ build_bin_seg(#b_literal{val=Bits}=Sz, U, integer=Type,
     end;
 build_bin_seg(Sz, U, utf8=Type, [unsigned,big]=Flags,
               #b_literal{val=Utf8}=Seg, Next) ->
+    % eqwalizer:ignore Utf8 :: integer()
     case utf8_fits(Utf8) of
         {Int,Bits} ->
             build_bin_seg_integer_recur(Bits, Int, Next);
@@ -866,10 +997,12 @@ build_bin_seg(Sz, U, utf8=Type, [unsigned,big]=Flags,
 build_bin_seg(Sz, U, Type, Flags, Seg, Next) ->
     #cg_bin_seg{size=Sz,unit=U,type=Type,flags=Flags,seg=Seg,next=Next}.
 
+-spec build_bin_seg_integer_recur(integer(), integer(), #cg_bin_seg{} | #cg_bin_end{}) -> #cg_bin_seg{}.
 build_bin_seg_integer_recur(Bits, Val, Next) ->
     Chunks = bitstring_to_list(<<Val:Bits>>),
     build_bin_seg_integer_recur_1(Chunks, Next).
 
+-spec build_bin_seg_integer_recur_1([byte() | bitstring()], #cg_bin_seg{} | #cg_bin_end{}) -> #cg_bin_seg{}.
 build_bin_seg_integer_recur_1([Val0], Next) when is_bitstring(Val0) ->
     Bits = bit_size(Val0),
     <<Val:Bits>> = Val0,
@@ -880,12 +1013,14 @@ build_bin_seg_integer_recur_1([Val|Values], Next0) when is_integer(Val) ->
     Next = build_bin_seg_integer_recur_1(Values, Next0),
     build_bin_seg_integer(8, Val, Next).
 
+-spec build_bin_seg_integer(integer(), integer(), #cg_bin_seg{} | #cg_bin_end{}) -> #cg_bin_seg{}.
 build_bin_seg_integer(Bits, Val, Next) ->
     Sz = #b_literal{val=Bits},
     Seg = #b_literal{val=Val},
     #cg_bin_seg{size=Sz,unit=1,type=integer,flags=[unsigned,big],
                 seg=Seg,next=Next}.
 
+-spec integer_fits_and_is_expandable(integer(), integer()) -> boolean().
 integer_fits_and_is_expandable(Int, Size)
   when is_integer(Int), is_integer(Size),
        0 < Size, Size =< ?EXPAND_MAX_SIZE_SEGMENT ->
@@ -895,6 +1030,7 @@ integer_fits_and_is_expandable(Int, Size)
     end;
 integer_fits_and_is_expandable(_Int, _Size) -> false.
 
+-spec utf8_fits(integer()) -> {integer(), integer()} | error.
 utf8_fits(Utf8) ->
     try <<Utf8/utf8>> of
         Bin ->
@@ -907,6 +1043,7 @@ utf8_fits(Utf8) ->
 
 %% pattern_list([Cexpr], Sub, State) -> {[Kexpr],Sub,State}.
 
+-spec pattern_list([cerl:cerl()], sub(), state()) -> {[kexpr()], sub(), state()}.
 pattern_list(Ces, Sub, St) ->
     foldr(fun (Ce, {Kes,Sub0,St0}) ->
                   {Ke,Sub1,St1} = pattern(Ce, Sub0, St0),
@@ -923,24 +1060,32 @@ pattern_list(Ces, Sub, St) ->
 %%  variable without having to scan through all of them, which can cause
 %%  compile times to explode (see record_SUITE:slow_compilation/1).
 
+-spec new_sub() -> sub().
 new_sub() -> {#{}, #{}}.
 
+-spec get_vsub(cerl:var_name(), sub()) -> beam_ssa:var_name().
 get_vsub(Key, Subs) ->
+    % eqwalizer:ignore - cerl:var_name() vs beam:ssa
     bimap_get(Key, Subs, Key).
 
+-spec get_fsub(todo(), arity(), sub()) -> todo().
 get_fsub(Name, Arity, Subs) ->
     bimap_get({Name, Arity}, Subs, Name).
 
+-spec set_vsub(todo(), todo(), sub()) -> sub().
 set_vsub(Key, Val, Subs) ->
     true = Key =/= Val,                         %Assertion.
     bimap_set(Key, Val, Subs).
 
+-spec set_fsub(todo(), arity(), todo(), sub()) -> sub().
 set_fsub(Name, Arity, Val, Subs) ->
     set_vsub({Name, Arity}, Val, Subs).
 
+-spec subst_vsub(todo(), todo(), sub()) -> sub().
 subst_vsub(Key, Val, Subs) ->
     bimap_rename(Key, Val, Subs).
 
+-spec bimap_get(cerl:var_name(), sub(), Default) -> beam_ssa:b_var() | Default.
 bimap_get(Key, {Map, _InvMap}, Default) ->
     case Map of
         #{Key := Val} -> Val;
@@ -948,11 +1093,15 @@ bimap_get(Key, {Map, _InvMap}, Default) ->
     end.
 
 %% Maps Key to Val without touching existing references to Key.
+-spec bimap_set(todo(), todo(), sub()) -> sub().
 bimap_set(Key, Val, {Map0, InvMap0}) when is_map(Map0), is_map(InvMap0) ->
     InvMap = bm_update_inv_lookup(Key, Val, Map0, InvMap0),
     Map = Map0#{Key => Val},
     {Map,InvMap}.
 
+-spec bm_update_inv_lookup(
+    todo(), todo(), #{todo() => todo()}, #{todo() => todo()}
+) -> #{todo() => todo()}.
 bm_update_inv_lookup(Key, Val, Map, InvMap0) ->
     InvMap = bm_cleanup_inv_lookup(Key, Map, InvMap0),
     case InvMap of
@@ -963,6 +1112,7 @@ bm_update_inv_lookup(Key, Val, Map, InvMap0) ->
             InvMap#{Val => [Key]}
     end.
 
+-spec bm_cleanup_inv_lookup(term(), #{todo() => todo()}, #{todo() => todo()}) -> #{todo() => todo()}.
 bm_cleanup_inv_lookup(Key, Map, InvMap) when is_map_key(Key, Map) ->
     #{Key := Old} = Map,
     #{Old := Keys0} = InvMap,
@@ -976,6 +1126,7 @@ bm_cleanup_inv_lookup(_Key, _Map, InvMap) ->
     InvMap.
 
 %% Map Key to Val, and replace all existing references to Key with Val.
+-spec bimap_rename(todo(), todo(), sub()) -> sub().
 bimap_rename(Key, Val, {Map0, InvMap0}) when is_map_key(Key, InvMap0) ->
     {Keys,InvMap1} = maps:take(Key, InvMap0),
     InvMap = InvMap1#{Val => add_element(Key, Keys)},
@@ -987,46 +1138,49 @@ bimap_rename(Key, Val, {Map0, InvMap0}) when is_map_key(Key, InvMap0) ->
 bimap_rename(Key, Val, Subs) ->
     bimap_set(Key, Val, Subs).
 
+-spec bimap_update_lookup([todo()], todo(), #{todo() => todo()}) -> #{todo() => todo()}.
 bimap_update_lookup([Key|Keys], Val, Map) ->
     bimap_update_lookup(Keys, Val, Map#{Key := Val});
 bimap_update_lookup([], _Val, Map) ->
     Map.
 
+-spec new_fun_name(state()) -> {atom(), state()}.
 new_fun_name(St) ->
     new_fun_name("anonymous", St).
 
 %% new_fun_name(Type, State) -> {FunName,State}.
 
+-spec new_fun_name(string(), state()) -> {atom(), state()}.
 new_fun_name(Type, #kern{func={F,Arity},fcount=C}=St) ->
     Name = "-" ++ atom_to_list(F) ++ "/" ++ integer_to_list(Arity) ++
         "-" ++ Type ++ "-" ++ integer_to_list(C) ++ "-",
     {list_to_atom(Name),St#kern{fcount=C+1}}.
 
-%% new_var_name(State) -> {VarName,State}.
-
+-spec new_var_name(state()) -> {integer(), state()}.
 new_var_name(#kern{vcount=C}=St) ->
     {C,St#kern{vcount=C+1}}.
 
-%% new_var(State) -> {#b_var{},State}.
-
+-spec new_var(state()) -> {beam_ssa:b_var(), state()}.
 new_var(St0) ->
     {New,St1} = new_var_name(St0),
     {#b_var{name=New},St1}.
 
-%% new_vars(Count, State) -> {[#b_var{}],State}.
-
+-spec new_vars(integer(), state()) -> {[beam_ssa:b_var()], state()}.
 new_vars(N, St) when is_integer(N) ->
     new_vars(N, St, []).
 
+-spec new_vars(integer(), state(), [beam_ssa:b_var()]) -> {[beam_ssa:b_var()], state()}.
 new_vars(N, St0, Vs) when N > 0 ->
     {V,St1} = new_var(St0),
     new_vars(N-1, St1, [V|Vs]);
 new_vars(0, St, Vs) -> {Vs,St}.
 
+-spec make_vars([beam_ssa:var_name()]) -> [beam_ssa:b_var()].
 make_vars(Vs) -> [#b_var{name=V} || V <- Vs].
 
 %% call_type(Mod, Name, [Arg], State) -> bif | call | is_record | error.
 
+-spec call_type(cerl:cerl(), cerl:cerl(), [cerl:cerl()], state()) -> bif | call | is_record | error.
 call_type(#c_literal{val=M}, #c_literal{val=F}, As, St) when is_atom(M), is_atom(F) ->
     case is_guard_bif(M, F, As) of
         false ->
@@ -1050,6 +1204,7 @@ call_type(_, _, _, _) -> error.
 %% is_guard_bif(Mod, Name, Args) -> true | false.
 %%  Test whether this function is a guard BIF.
 
+-spec is_guard_bif(module(), atom(), [term()]) -> boolean().
 is_guard_bif(erlang, get, [_]) -> true;
 is_guard_bif(erlang, is_record, [_,Tag,Sz]) ->
     case {Tag,Sz} of
@@ -1104,6 +1259,7 @@ is_guard_bif(_, _, _) -> false.
 
 %% kmatch([Var], [Clause], Sub, State) -> {Kexpr,State}.
 
+-spec kmatch([beam_ssa:b_var()], [cerl:c_clause()], sub(), state()) -> {kexpr(), state()}.
 kmatch(Us, Ccs, Sub, St0) ->
     {Cs,St1} = match_pre(Ccs, Sub, St0),        %Convert clauses
     Def = fail,
@@ -1112,6 +1268,7 @@ kmatch(Us, Ccs, Sub, St0) ->
 %% match_pre([Cclause], Sub, State) -> {[Clause],State}.
 %%  Must be careful not to generate new substitutions here now!
 
+-spec match_pre([cerl:c_clause()], sub(), state()) -> {[#iclause{}], state()}.
 match_pre(Cs, Sub0, St) ->
     foldr(fun (#c_clause{anno=A,pats=Ps,guard=G,body=B}, {Cs0,St0}) ->
                   {Kps,Sub1,St1} = pattern_list(Ps, Sub0, St0),
@@ -1121,6 +1278,7 @@ match_pre(Cs, Sub0, St) ->
 
 %% match([Var], [Clause], Default, State) -> {MatchExpr,State}.
 
+-spec match([beam_ssa:b_var()], [#iclause{}], todo(), state()) -> {kexpr(), state()}.
 match([_|_]=Vars, Cs, Def, St0) ->
     Pcss = partition(Cs),
     foldr(fun (Pcs, {D,St}) ->
@@ -1134,10 +1292,12 @@ match([], Cs, Def, St) ->
 %%  clause matches, there will be a surrounding 'alt' to catch the
 %%  failure.  Drop redundant cases, i.e. those after a true guard.
 
+-spec match_guard([#iclause{}], todo(), state()) -> {kexpr(), state()}.
 match_guard(Cs0, Def0, St0) ->
     {Cs1,Def1,St1} = match_guard_1(Cs0, Def0, St0),
     {build_alt(build_guard(Cs1), Def1),St1}.
 
+-spec match_guard_1([#iclause{}], todo(), state()) -> {[#cg_guard_clause{}], todo(), state()}.
 match_guard_1([#iclause{anno=A,sub=Sub,guard=G,body=B}|Cs0], Def0, St0) ->
     case is_true_guard(G) of
         true ->
@@ -1158,6 +1318,7 @@ match_guard_1([], Def, St) -> {[],Def,St}.
 %% is_true_guard(Guard) -> boolean().
 %%  Test if a guard is trivially true.
 
+-spec is_true_guard(cerl:cerl()) -> boolean().
 is_true_guard(#c_literal{val=true}) -> true;
 is_true_guard(_) -> false.
 
@@ -1165,6 +1326,7 @@ is_true_guard(_) -> false.
 %%  Partition a list of clauses into groups which either contain
 %%  clauses with a variable first argument, or with a "constructor".
 
+-spec partition([#iclause{}]) -> [[#iclause{}]].
 partition([C1|Cs]) ->
     V1 = is_var_clause(C1),
     {More,Rest} = splitwith(fun (C) -> is_var_clause(C) =:= V1 end, Cs),
@@ -1174,6 +1336,7 @@ partition([]) -> [].
 %% match_varcon([Var], [Clause], Def, [Var], Sub, State) ->
 %%        {MatchExpr,State}.
 
+-spec match_varcon([beam_ssa:b_var()], [#iclause{}], todo(), state()) -> {kexpr(), state()}.
 match_varcon(Us, [C|_]=Cs, Def, St) ->
     case is_var_clause(C) of
         true -> match_var(Us, Cs, Def, St);
@@ -1187,6 +1350,7 @@ match_varcon(Us, [C|_]=Cs, Def, St) ->
 %%  this variable and may have different names for it.  Rename aliases
 %%  as well.
 
+-spec match_var([beam_ssa:b_var()], [#iclause{}], todo(), state()) -> {kexpr(), state()}.
 match_var([U|Us], Cs0, Def, St) ->
     Cs1 = map(fun (#iclause{sub=Sub0,pats=[Arg|As]}=C) ->
                       Vs = [arg_arg(Arg)|arg_alias(Arg)],
@@ -1202,6 +1366,7 @@ match_var([U|Us], Cs0, Def, St) ->
 %%  constructor/constant as first argument.  Group the constructors
 %%  according to type, the order is really irrelevant but tries to be
 %%  smart.
+-spec match_con([beam_ssa:b_var()], [#iclause{}], todo(), state()) -> {kexpr(), state()}.
 match_con([U|_Us]=L, Cs, Def, St0) ->
     %% Extract clauses for different constructors (types).
     Ttcs0 = select_types(Cs, [], [], [], [], [], [], [], [], []),
@@ -1215,6 +1380,7 @@ match_con([U|_Us]=L, Cs, Def, St0) ->
                  St0, Ttcs),
     {build_alt(build_select(U, Scs), Def),St1}.
 
+-spec select_types([#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}], [#iclause{}]) -> [{con() | {bif, atom()}, [#iclause{}]}].
 select_types([NoExpC|Cs], Bin, BinCon, Cons, Tuple, Map, Atom, Float, Int, Nil) ->
     C = expand_pat_lit_clause(NoExpC),
     case clause_con(C) of
@@ -1251,6 +1417,7 @@ select_types([], Bin, BinCon, Cons, Tuple, Map, Atom, Float, Int, Nil) ->
          {cg_nil, reverse(Nil)}
         ].
 
+-spec expand_pat_lit_clause(#iclause{}) -> #iclause{}.
 expand_pat_lit_clause(#iclause{pats=[#ialias{pat=#b_literal{val=Val}}=Alias|Ps]}=C) ->
     P = expand_pat_lit(Val),
     C#iclause{pats=[Alias#ialias{pat=P}|Ps]};
@@ -1259,6 +1426,7 @@ expand_pat_lit_clause(#iclause{pats=[#b_literal{val=Val}|Ps]}=C) ->
     C#iclause{pats=[P|Ps]};
 expand_pat_lit_clause(C) -> C.
 
+-spec expand_pat_lit(beam_ssa:literal_value()) -> #cg_cons{} | #cg_tuple{} | #b_literal{}.
 expand_pat_lit([H|T]) ->
     #cg_cons{hd=#b_literal{val=H},tl=#b_literal{val=T}};
 expand_pat_lit(Tuple) when is_tuple(Tuple) ->
@@ -1275,9 +1443,15 @@ expand_pat_lit(Lit) ->
 %%  (such as `[]`), since that would cause the test for an empty list
 %%  to be executed before the test for a nonempty list.
 
+-spec opt_single_valued([{con() | {bif, atom()}, [#iclause{}]}]) -> [{con() | {bif, atom()}, [#iclause{}]}].
 opt_single_valued(Ttcs) ->
     opt_single_valued(Ttcs, [], []).
 
+-spec opt_single_valued(
+    [{con() | {bif, atom()}, [#iclause{}]}],
+    [{con() | {bif, atom()}, [#iclause{}]}],
+    [#iclause{}]
+) -> [{con() | {bif, atom()}, [#iclause{}]}].
 opt_single_valued([{_,[#iclause{pats=[#b_literal{}|_]}]}=Ttc|Ttcs], TtcAcc, LitAcc) ->
     %% This is an atomic literal.
     opt_single_valued(Ttcs, [Ttc|TtcAcc], LitAcc);
@@ -1307,6 +1481,7 @@ opt_single_valued([], TtcAcc, LitAcc) ->
             [Literals|Ttcs]
     end.
 
+-spec combine_lit_pat(#ialias{} | #cg_binary{} | #cg_cons{} | #cg_tuple{} | beam_ssa:b_literal()) -> #ialias{} | beam_ssa:b_literal().
 combine_lit_pat(#ialias{pat=Pat0}=Alias) ->
     Pat = combine_lit_pat(Pat0),
     Alias#ialias{pat=Pat};
@@ -1317,12 +1492,14 @@ combine_lit_pat(#b_literal{}) ->
 combine_lit_pat(Pat) ->
     do_combine_lit_pat(Pat).
 
+-spec do_combine_lit_pat(#cg_binary{} | #cg_cons{} | #cg_tuple{} | beam_ssa:b_literal()) -> beam_ssa:b_literal().
 do_combine_lit_pat(#cg_binary{segs=Segs}) ->
     Bin = combine_bin_segs(Segs),
     #b_literal{val=Bin};
 do_combine_lit_pat(#cg_cons{hd=Hd0,tl=Tl0}) ->
     #b_literal{val=Hd} = do_combine_lit_pat(Hd0),
     #b_literal{val=Tl} = do_combine_lit_pat(Tl0),
+    % eqwalizer:ignore - improper_list
     #b_literal{val=[Hd|Tl]};
 do_combine_lit_pat(#b_literal{}=Lit) ->
     Lit;
@@ -1335,6 +1512,7 @@ do_combine_lit_pat(#cg_tuple{es=Es0}) ->
 do_combine_lit_pat(_) ->
     throw(not_possible).
 
+-spec combine_bin_segs(#cg_bin_seg{} | #cg_bin_end{} | beam_ssa:b_var()) -> binary().
 combine_bin_segs(#cg_bin_seg{size=#b_literal{val=8},unit=1,type=integer,
                              flags=[unsigned,big],seg=#b_literal{val=Int},next=Next})
   when is_integer(Int), 0 =< Int, Int =< 255 ->
@@ -1349,6 +1527,7 @@ combine_bin_segs(_) ->
 %%  matching can overlap, the cg_bin_seg constructors cannot be
 %%  reordered, only grouped.
 
+-spec handle_bin_con([#iclause{}]) -> [{con(), [#iclause{}]}].
 handle_bin_con(Cs) ->
     %% The usual way to match literals is to first extract the
     %% value to a register, and then compare the register to the
@@ -1390,6 +1569,7 @@ handle_bin_con(Cs) ->
             handle_bin_con_not_possible(Cs)
     end.
 
+-spec handle_bin_con_not_possible([#iclause{}]) -> [{con(), [#iclause{}]}].
 handle_bin_con_not_possible([C1|Cs]) ->
     Con = clause_con(C1),
     {More,Rest} = splitwith(fun (C) -> clause_con(C) =:= Con end, Cs),
@@ -1404,6 +1584,7 @@ handle_bin_con_not_possible([]) -> [].
 %%  If it is not possible to do this rewrite, a 'not_possible'
 %%  exception is thrown.
 
+-spec select_bin_int([#iclause{}]) -> [{cg_bin_int, [#iclause{}]}].
 select_bin_int([#iclause{pats=[#cg_bin_seg{type=integer,
                                            size=#b_literal{val=Bits0}=Sz,unit=U,
                                            flags=Fl,seg=#b_literal{val=Val},
@@ -1427,6 +1608,7 @@ select_bin_int([#iclause{pats=[#cg_bin_seg{type=integer,
     [{cg_bin_int,Cs}];
 select_bin_int(_) -> throw(not_possible).
 
+-spec select_bin_int_1([#iclause{}], integer(), [atom()], dynamic()) -> [#iclause{}].
 select_bin_int_1([#iclause{pats=[#cg_bin_seg{type=integer,
                                              size=#b_literal{val=Bits0}=Sz,
                                              unit=U,
@@ -1442,6 +1624,7 @@ select_bin_int_1([#iclause{pats=[#cg_bin_seg{type=integer,
 select_bin_int_1([], _, _, _) -> [];
 select_bin_int_1(_, _, _, _) -> throw(not_possible).
 
+-spec select_assert_match_possible(integer(), integer(), dynamic()) -> ok.
 select_assert_match_possible(Sz, Val, Fs)
   when is_integer(Sz), Sz >= 0, is_integer(Val) ->
     EmptyBindings = erl_eval:new_bindings(),
@@ -1467,6 +1650,7 @@ match_fun(Val) ->
             {match,Bs}
     end.
 
+-spec reorder_bin_ints([#iclause{}]) -> [#iclause{}].
 reorder_bin_ints([_]=Cs) ->
     Cs;
 reorder_bin_ints(Cs0) ->
@@ -1487,6 +1671,7 @@ reorder_bin_ints(Cs0) ->
             Cs0
     end.
 
+-spec reorder_bin_int_sort_key(#iclause{}) -> [todo() | more].
 reorder_bin_int_sort_key(#iclause{pats=[Pat|More],guard=#c_literal{val=true}}) ->
     case all(fun(#b_var{}) -> true;
                 (_) -> false
@@ -1518,6 +1703,7 @@ reorder_bin_int_sort_key(#iclause{pats=[Pat|More],guard=#c_literal{val=true}}) -
 reorder_bin_int_sort_key(#iclause{}) ->
     throw(not_possible).
 
+-spec ensure_fixed_size(#cg_bin_seg{} | #cg_bin_end{} | beam_ssa:b_var()) -> ok.
 ensure_fixed_size(#cg_bin_seg{size=Size,next=Next}) ->
     case Size of
         #b_literal{val=Sz} when is_integer(Sz) ->
@@ -1532,6 +1718,9 @@ ensure_fixed_size(#cg_bin_end{}) ->
 %%  At this point all the clauses have the same constructor; we must
 %%  now separate them according to value.
 
+-spec match_value(
+    [beam_ssa:b_var()], con() | {bif, atom()}, [#iclause{}], todo(), state()
+) -> {[#cg_val_clause{}], state()}.
 match_value(Us0, cg_map=T, Cs0, Def, St0) ->
     {Cs1,St1} = remove_unreachable(Cs0, St0),
     {Us1,Cs2,St2} = partition_intersection(Us0, Cs1, St1),
@@ -1539,6 +1728,9 @@ match_value(Us0, cg_map=T, Cs0, Def, St0) ->
 match_value(Us0, T, Cs0, Def, St0) ->
     do_match_value(Us0, T, Cs0, Def, St0).
 
+-spec do_match_value(
+    [beam_ssa:b_var()], con() | {bif, atom()}, [#iclause{}], todo(), state()
+) -> {[#cg_val_clause{}], state()}.
 do_match_value(Us0, T, Cs0, Def, St0) ->
     UCss = group_value(T, Us0, Cs0),
     mapfoldl(fun ({Us,Cs}, St) -> match_clause(Us, Cs, Def, St) end, St0, UCss).
@@ -1546,6 +1738,7 @@ do_match_value(Us0, T, Cs0, Def, St0) ->
 %% remove_unreachable([Clause], State) -> {[Clause],State}
 %%  Remove all clauses after a clause that will always match any
 %%  map.
+-spec remove_unreachable([#iclause{}], state()) -> {[#iclause{}], state()}.
 remove_unreachable([#iclause{anno=Anno,pats=Pats,guard=G}=C|Cs0], St0) ->
     maybe
         %% Will the first pattern match any map?
@@ -1592,6 +1785,7 @@ remove_unreachable([], St0) ->
 %%  The intention is to group as many keys together as possible and
 %%  thus reduce the number of lookups to that key.
 
+-spec partition_intersection([beam_ssa:b_var()], [#iclause{}], state()) -> {[beam_ssa:b_var()], [#iclause{}], state()}.
 partition_intersection([U|_]=Us, [_,_|_]=Cs0, St0) ->
     Ps = [clause_val(C) || C <- Cs0],
     case find_key_intersection(Ps) of
@@ -1607,6 +1801,7 @@ partition_intersection([U|_]=Us, [_,_|_]=Cs0, St0) ->
 partition_intersection(Us, Cs, St) ->
     {Us,Cs,St}.
 
+-spec partition_keys(#cg_map{} | #ialias{}, todo()) -> {#cg_map{}, #cg_map{} | #ialias{}}.
 partition_keys(#cg_map{es=Pairs}=Map, Ks) ->
     F = fun(#cg_map_pair{key=Key}) ->
                 sets:is_element(Key, Ks)
@@ -1618,6 +1813,7 @@ partition_keys(#ialias{pat=Map}=Alias, Ks) ->
     {Map1,Map2} = partition_keys(Map, Ks),
     {Map1,Alias#ialias{pat=Map2}}.
 
+-spec find_key_intersection(list()) -> none | {ok, sets:set(dynamic())}.
 find_key_intersection(Ps) ->
     Sets = [sets:from_list(Ks) || Ks <- Ps],
     Intersection = sets:intersection(Sets),
@@ -1643,6 +1839,7 @@ find_key_intersection(Ps) ->
 %%     only grouped
 %%  3. Other types are disjoint and can be reordered
 
+-spec group_value(con() | {bif, atom()}, [beam_ssa:b_var()], [#iclause{}]) -> [{[beam_ssa:b_var()], [#iclause{}]}].
 group_value(cg_cons, Us, Cs)    -> [{Us,Cs}];  %These are single valued
 group_value(cg_nil, Us, Cs)     -> [{Us,Cs}];
 group_value(cg_binary, Us, Cs)  -> [{Us,Cs}];
@@ -1657,10 +1854,12 @@ group_value(_, Us, Cs) ->
     %% order from compilation to compilation.
     sort([{Us,Vcs} || _ := Vcs <- Map]).
 
+-spec group_values([#iclause{}]) -> #{term() => [#iclause{}]}.
 group_values(Cs) ->
     F = fun(C) -> clause_val(C) end,
     maps:groups_from_list(F, Cs).
 
+-spec group_keeping_order([beam_ssa:b_var()], [#iclause{}]) -> [{[beam_ssa:b_var()], [#iclause{}]}].
 group_keeping_order(Us, [C1|Cs]) ->
     V1 = clause_val(C1),
     {More,Rest} = splitwith(fun (C) -> clause_val(C) =:= V1 end, Cs),
@@ -1672,6 +1871,7 @@ group_keeping_order(_, []) -> [].
 %%  select clause for this value and continue matching.  Rename
 %%  aliases as well.
 
+-spec match_clause([beam_ssa:b_var()], [#iclause{}], todo(), state()) -> {#cg_val_clause{}, state()}.
 match_clause([U|Us], [#iclause{anno=Anno}|_]=Cs0, Def, St0) ->
     {Match,Vs,St1} = get_match(get_con(Cs0), St0),
     Cs1 = new_clauses(Cs0, U),
@@ -1723,6 +1923,7 @@ get_match(#cg_map{op=exact,es=Es0}, St0) ->
 get_match(M, St) ->
     {M,[],St}.
 
+-spec new_clauses([#iclause{}], beam_ssa:b_var()) -> [#iclause{}].
 new_clauses(Cs, #b_var{name=U}) ->
     map(fun(#iclause{sub=Sub0,pats=[Arg|As]}=C) ->
                 Head = case arg_arg(Arg) of
@@ -1778,6 +1979,7 @@ new_clauses(Cs, #b_var{name=U}) ->
 %%% re-reversed at the end.
 %%%
 
+-spec squeeze_clauses([#iclause{}], [[#iclause{}]]) -> [#iclause{}].
 squeeze_clauses([C|Cs], Acc) ->
     case clause_count_segments(C) of
         {literal,N} ->
@@ -1788,6 +1990,7 @@ squeeze_clauses([C|Cs], Acc) ->
 squeeze_clauses(_, Acc) ->
     flat_reverse(Acc).
 
+-spec squeeze_clauses([#iclause{}], integer(), integer(), [#iclause{}], [[#iclause{}]]) -> [#iclause{}].
 squeeze_clauses([C|Cs], N0, Count, GroupAcc, Acc) ->
     case clause_count_segments(C) of
         {literal,N} ->
@@ -1806,6 +2009,7 @@ squeeze_clauses([], N, Count, GroupAcc, Acc) ->
     Squeezed = do_squeeze_clauses(GroupAcc, fix_count(N), Count),
     flat_reverse([Squeezed|Acc]).
 
+-spec clause_count_segments(#iclause{}) -> {variadic, integer()} | {literal, integer()} | bin_end | error.
 clause_count_segments(#iclause{pats=[P|_]}) ->
     case P of
         #cg_bin_seg{seg=#b_literal{}} ->
@@ -1823,6 +2027,7 @@ clause_count_segments(#iclause{pats=[P|_]}) ->
     end;
 clause_count_segments(_) -> error.
 
+-spec count_segments(beam_ssa:b_var() | #cg_bin_seg{} | #cg_bin_end{}, integer()) -> {literal, integer()} | error.
 count_segments(#cg_bin_seg{size=#b_literal{val=8},
                            unit=1,type=integer,flags=[unsigned,big],
                            seg=#b_literal{val=Int},next=Next}, Count)
@@ -1837,9 +2042,11 @@ count_segments(_, _Count) ->
 %% anything more than 3 bytes into a 2-byte lookup. The goal is to
 %% convert any multi-clause segment into 2-byte lookups with a
 %% potential 3-byte lookup at the end.
+-spec fix_count(integer()) -> integer().
 fix_count(N) when N > 3 -> 2;
 fix_count(N) -> N.
 
+-spec do_squeeze_clauses([#iclause{}], integer(), integer()) -> [#iclause{}].
 do_squeeze_clauses(Cs, Size, Count) when Count >= 16; Size =< 1 ->
     %% If we have more than 16 clauses it is better to branch multiple
     %% times than getting a large integer. We also give up if we have
@@ -1849,9 +2056,11 @@ do_squeeze_clauses(Cs, Size, _Count) ->
     [C#iclause{pats=[squeeze_segments(P, Size)|Pats]} ||
         #iclause{pats=[P|Pats]}=C <:- Cs].
 
+-spec squeeze_segments(#cg_bin_seg{}, integer()) -> #cg_bin_seg{}.
 squeeze_segments(BinSeg, Size) ->
     squeeze_segments(BinSeg, 0, 0, Size).
 
+-spec squeeze_segments(#cg_bin_seg{}, integer(), integer(), integer()) -> #cg_bin_seg{}.
 squeeze_segments(#cg_bin_seg{seg=#b_literal{val=Val},next=Next}=BinSeg,
                  Acc0, Size0, Count) ->
     Acc = (Acc0 bsl 8) bor Val,
@@ -1861,12 +2070,15 @@ squeeze_segments(#cg_bin_seg{seg=#b_literal{val=Val},next=Next}=BinSeg,
             BinSeg#cg_bin_seg{size=#b_literal{val=Size},
                               seg=#b_literal{val=Acc}};
         _ ->
+            % eqwalizer:ignore - b_var
             squeeze_segments(Next, Acc, Size, Count - 1)
     end.
 
+-spec flat_reverse([[A]]) -> [A].
 flat_reverse(L) ->
     flat_reverse(L, []).
 
+-spec flat_reverse([[A]], [A]) -> [A].
 flat_reverse([H|T], Acc) ->
     flat_reverse(T, reverse(H, Acc));
 flat_reverse([], Acc) -> Acc.
@@ -1877,17 +2089,20 @@ flat_reverse([], Acc) -> Acc.
 
 %% build_guard([GuardClause]) -> GuardExpr.
 
+-spec build_guard([#cg_guard_clause{}]) -> #cg_guard{} | fail.
 build_guard([]) -> fail;
 build_guard(Cs) -> #cg_guard{clauses=Cs}.
 
 %% build_select(Var, [ConClause]) -> SelectExpr.
 
+-spec build_select(beam_ssa:b_var(), [#cg_type_clause{}]) -> #cg_select{}.
 build_select(V, [#cg_type_clause{anno=Anno}|_]=Tcs) ->
     #cg_select{anno=Anno,var=V,types=Tcs}.
 
 %% build_alt(First, Then) -> AltExpr.
 %%  Build an alt.
 
+-spec build_alt(todo(), todo()) -> #cg_alt{}.
 build_alt(fail, Then) -> Then;
 build_alt(First, fail) -> First;
 build_alt(First, Then) ->
@@ -1897,6 +2112,7 @@ build_alt(First, Then) ->
 %% build_match(MatchExpr) -> Kexpr.
 %%  Build a match expr if there is a match.
 
+-spec build_match(kexpr()) -> kexpr().
 build_match(#cg_alt{}=Km) -> #cg_match{body=Km};
 build_match(#cg_select{}=Km) -> #cg_match{body=Km};
 build_match(#cg_guard{}=Km) -> #cg_match{body=Km};
@@ -1907,12 +2123,16 @@ build_match(Km) -> Km.
 %% clause_val(Clause) -> Value.
 %% is_var_clause(Clause) -> boolean().
 
+-spec clause_arg(#iclause{}) -> kexpr().
 clause_arg(#iclause{pats=[Arg|_]}) -> Arg.
 
+-spec clause_con(#iclause{}) -> con().
 clause_con(C) -> arg_con(clause_arg(C)).
 
+-spec clause_val(#iclause{}) -> term().
 clause_val(C) -> arg_val(clause_arg(C), C).
 
+-spec is_var_clause(#iclause{}) -> boolean().
 is_var_clause(C) -> clause_con(C) =:= b_var.
 
 %% arg_arg(Arg) -> Arg.
@@ -1924,9 +2144,13 @@ is_var_clause(C) -> clause_con(C) =:= b_var.
 arg_arg(#ialias{pat=Con}) -> Con;
 arg_arg(Con) -> Con.
 
+-spec arg_alias(kexpr()) -> [todo()].
 arg_alias(#ialias{vars=As}) -> As;
 arg_alias(_Con) -> [].
 
+-type con() :: cg_cons | cg_tuple | cg_map | cg_binary | cg_bin_end | cg_bin_int | cg_bin_seg | b_var | cg_atom | cg_int | cg_float | cg_nil | b_literal.
+
+-spec arg_con(kexpr()) -> con().
 arg_con(Arg) ->
     case arg_arg(Arg) of
         #cg_cons{} -> cg_cons;
@@ -1971,6 +2195,7 @@ arg_val(Arg, C) ->
 %%% Handling of errors and warnings (generated by the first pass).
 %%%
 
+-spec maybe_add_warning(todo(), anno(), state()) -> state().
 maybe_add_warning([C|_], MatchAnno, St) ->
     maybe_add_warning(C, MatchAnno, St);
 maybe_add_warning([], _MatchAnno, St) -> St;
@@ -1992,11 +2217,13 @@ maybe_add_warning(Ke, MatchAnno, St) ->
             add_warning(Anno, Warn, St)
     end.
 
+-spec add_warning(anno(), term(), state()) -> state().
 add_warning(Anno, Term, #kern{ws=Ws}=St) ->
     Location = get_location(Anno),
     File = get_file(Anno),
     St#kern{ws=[{File,[{Location,?MODULE,Term}]}|Ws]}.
 
+-spec get_location(anno()) -> none | erl_anno:location().
 get_location([Line|_]) when is_integer(Line) ->
     Line;
 get_location([{Line,Column}|_]) when is_integer(Line), is_integer(Column) ->
@@ -2006,6 +2233,7 @@ get_location([_|T]) ->
 get_location([]) ->
     none.
 
+-spec get_file(anno()) -> string().
 get_file([{file,File}|_]) -> File;
 get_file([_|T]) -> get_file(T);
 get_file([]) -> "no_file".                      %Should not happen
@@ -2017,6 +2245,7 @@ get_file([]) -> "no_file".                      %Should not happen
 %% ubody_used_vars(Expr, State) -> [UsedVar]
 %%  Return all used variables for the body sequence. Much more
 %%  efficient than using ubody/3 if the body contains nested letrecs.
+-spec ubody_used_vars(kexpr(), state()) -> [beam_ssa:var_name()].
 ubody_used_vars(Expr, St) ->
     {_,Used,_} = ubody(Expr, return, St#kern{funs=ignore}),
     Used.
@@ -2026,6 +2255,9 @@ ubody_used_vars(Expr, St) ->
 %%  either end with a #cg_break{}, #b_ret{} or, an expression
 %%  which itself can return, such as #cg_match{}.
 
+-spec ubody(
+    kexpr(), return | {break, [beam_ssa:b_var()]}, state()
+) -> {kexpr() | #cg_seq{} | beam_ssa:b_ret(), [beam_ssa:var_name()], state()}.
 ubody(#ilet{vars=[],arg=#iletrec{}=Let,body=B0}, Br, St0) ->
     %% An iletrec{} should never be last.
     St = iletrec_funs(Let, St0),
@@ -2069,6 +2301,7 @@ ubody(E, {break,Rs}=Break, St0) ->
     PreSeq = #ilet{vars=Vs,arg=E,body=#cg_break{args=Vs}},
     ubody(PreSeq, Break, St1).
 
+-spec iletrec_funs(#iletrec{}, state()) -> state().
 iletrec_funs(#iletrec{defs=Fs}, St0) ->
     %% Use union of all free variables.
     %% First just work out free variables for all functions.
@@ -2086,6 +2319,7 @@ iletrec_funs(#iletrec{defs=Fs}, St0) ->
     iletrec_funs_gen(Fs, FreeVs, St1).
 
 %% Now regenerate local functions to use free variable information.
+-spec iletrec_funs_gen([{atom(), #ifun{}}], [beam_ssa:b_var()], state()) -> state().
 iletrec_funs_gen(_, _, #kern{funs=ignore}=St) ->
     %% Optimization: The ultimate caller is only interested in the used variables,
     %% not the updated state. Makes a difference if there are nested letrecs.
@@ -2094,6 +2328,7 @@ iletrec_funs_gen(Fs, FreeVs, St0) ->
     foldl(fun ({N,#ifun{anno=Fa,vars=Vs,body=Fb0}}, Lst0) ->
                   {Fb1,_,Lst1} = ubody(Fb0, return, Lst0),
                   Fun = make_ssa_function(Fa, N, Vs++FreeVs, Fb1, Lst1),
+                  % eqwalizer:ignore - ignore
                   Lst1#kern{funs=[Fun|Lst1#kern.funs]}
           end, St0, Fs).
 
@@ -2101,6 +2336,9 @@ iletrec_funs_gen(Fs, FreeVs, St0) ->
 %%  Calculate the used variables for an expression.
 %%  Break = return | {break,[RetVar]}.
 
+-spec uexpr(
+    kexpr(), return | {break, [beam_ssa:b_var()]}, state()
+) -> {kexpr() | #cg_seq{}, [beam_ssa:var_name()], state()}.
 uexpr(#cg_test{args=As}=Test, {break,Rs}, St) ->
     [] = Rs,                                    %Sanity check
     Used = atomic_list_vars(As),
@@ -2169,6 +2407,7 @@ uexpr(#ifun{anno=A,vars=Vs,body=B0}, {break,Rs}, St0) ->
     {MakeFun,St3} = make_fun(Rs, Local, Fvs, St2),
     {MakeFun,Free,add_local_function(Fun, St3)};
 uexpr(#b_local{name=#b_literal{val=Name},arity=Arity}=Local0, {break,Rs}, St0) ->
+    % eqwalizer:ignore Name :: atom()
     Free = atomic_list_vars(get_free(Name, Arity, St0)),
     Fvs = make_vars(Free),
     FreeCount = length(Fvs),
@@ -2183,26 +2422,33 @@ uexpr(#cg_letrec_goto{vars=Vs,first=F0,then=T0}=LetrecGoto, Br, St0) ->
     Used = subtract(union(Fu, Tu), Ns),
     {LetrecGoto#cg_letrec_goto{first=F1,then=T1,ret=Rs},Used,St2};
 uexpr(#b_set{dst=none,args=Args}=Set, {break,[Dst]}, St) ->
+    % eqwalizer:ignore - Vs :: [katomic()]
     Used = atomic_list_vars(Args),
     {Set#b_set{dst=Dst},Used,St};
 uexpr(#b_set{dst=none,args=Args}=Set0, {break,Rs0}, St0) ->
+    % eqwalizer:ignore - Vs :: [katomic()]
     Used = atomic_list_vars(Args),
     {[Dst|Ds],St1} = ensure_return_vars(Rs0, St0),
     Seq = set_unused(Ds, Set0#b_set{dst=Dst}),
     {Seq,Used,St1};
 uexpr(#cg_succeeded{set=Set0}, {break,_}=Br, St0) ->
     {Set,Used,St1} = uexpr(Set0, Br, St0),
+    % eqwalizer:ignore - uexpr maps b_set into b_set
     {#cg_succeeded{set=Set},Used,St1};
 uexpr(#cg_opaque{}=Opaque, _, St) ->
     {Opaque,[],St};
 uexpr(Atomic, {break,[Dst]}, St0) ->
+    % eqwalizer:ignore - katomic()
     Used = atomic_vars(Atomic),
+    % eqwalizer:ignore - katomic()
     {#b_set{op=copy,dst=Dst,args=[Atomic]},Used,St0}.
 
+-spec make_fun([beam_ssa:b_var()], beam_ssa:b_local(), [beam_ssa:b_var()], state()) -> {beam_ssa:b_set(), state()}.
 make_fun(Rs, Local, FreeVars, St0) ->
     {[Dst],St1} = ensure_return_vars(Rs, St0),
     {#b_set{op=make_fun,dst=Dst,args=[Local|FreeVars]},St1}.
 
+-spec add_local_function(beam_ssa:b_function(), state()) -> state().
 add_local_function(_, #kern{funs=ignore}=St) ->
     St;
 add_local_function(#b_function{anno=Anno}=F,
@@ -2215,6 +2461,7 @@ add_local_function(#b_function{anno=Anno}=F,
             St
     end.
 
+-spec is_defined(mfa(), [beam_ssa:b_function()]) -> boolean().
 is_defined(FuncInfo, [#b_function{anno=Anno}|Fs]) ->
     case Anno of
         #{func_info := FuncInfo} -> true;
@@ -2222,6 +2469,7 @@ is_defined(FuncInfo, [#b_function{anno=Anno}|Fs]) ->
     end;
 is_defined(_, []) -> false.
 
+-spec set_unused([beam_ssa:b_var()], Seq) -> Seq when Seq :: #cg_call{} | #cg_seq{} | beam_ssa:b_set().
 set_unused([D|Ds], Seq) ->
     Copy = #b_set{op=copy,dst=D,args=[#b_literal{val=unused}]},
     set_unused(Ds, #cg_seq{arg=Copy,body=Seq});
@@ -2230,22 +2478,26 @@ set_unused([], Seq) -> Seq.
 %% get_free(Name, Arity, State) -> [Free].
 %% store_free(Name, Arity, [Free], State) -> State.
 
+-spec get_free(atom(), arity(), state()) -> [beam_ssa:b_var()].
 get_free(F, A, #kern{free=FreeMap}) ->
     case FreeMap of
         #{{F,A} := Val} -> Val;
         #{} -> []
     end.
 
+-spec store_free(atom(), arity(), [beam_ssa:b_var()], state()) -> state().
 store_free(F, A, Free, #kern{free=FreeMap0}=St) ->
     FreeMap = FreeMap0#{{F,A} => Free},
     St#kern{free=FreeMap}.
 
+-spec break_rets(return | {break, [beam_ssa:b_var()]}) -> [beam_ssa:b_var()].
 break_rets({break,Rs}) -> Rs;
 break_rets(return) -> [].
 
 %% internal_returns(Op, [Ret], State) -> {[Ret],State}.
 %%  Fix return values for #cg_internal{}.
 
+-spec internal_returns(#cg_internal{}, [beam_ssa:b_var()], state()) -> {[beam_ssa:b_var()], state()}.
 internal_returns(#cg_internal{op=Op,args=Args}, Rs, St0) ->
     Ar = length(Args),
     NumReturns = case {Op,Ar} of
@@ -2257,12 +2509,17 @@ internal_returns(#cg_internal{op=Op,args=Args}, Rs, St0) ->
 
 %% ensure_return_vars([Ret], State) -> {[Ret],State}.
 
+-spec ensure_return_vars([beam_ssa:b_var()], state()) -> {[beam_ssa:b_var()], state()}.
 ensure_return_vars([], St) -> new_vars(1, St);
 ensure_return_vars([_|_]=Rs, St) -> {Rs,St}.
 
 %% umatch(Match, Break, State) -> {Match,[UsedVar],State}.
 %%  Calculate the used variables for a match expression.
 
+-spec umatch(
+    kexpr() | M, return | {break, [beam_ssa:b_var()]}, state()
+) -> {kexpr() | M | #cg_seq{} | beam_ssa:b_ret(), [beam_ssa:var_name()], state()} when
+    M :: #cg_type_clause{} | #cg_val_clause{} | #cg_guard_clause{}.
 umatch(#cg_alt{first=F0,then=T0}=Alt, Br, St0) ->
     {F1,Fu,St1} = umatch(F0, Br, St0),
     {T1,Tu,St2} = umatch(T0, Br, St1),
@@ -2313,6 +2570,7 @@ pat_mark_unused(P, _Used, _Ps) -> P.
 
 %% op_vars(Op) -> [VarName].
 
+-spec op_vars(#b_remote{} | katomic()) -> [beam_ssa:var_name()].
 op_vars(#b_remote{mod=Mod,name=Name}) ->
     atomic_list_vars([Mod,Name]);
 op_vars(Atomic) -> atomic_vars(Atomic).
@@ -2320,9 +2578,11 @@ op_vars(Atomic) -> atomic_vars(Atomic).
 %% atomic_vars(Literal) -> [VarName].
 %%  Return the variables in an atomic (variable or literal).
 
+-spec atomic_vars(katomic()) -> [beam_ssa:var_name()].
 atomic_vars(#b_var{name=N}) -> [N];
 atomic_vars(#b_literal{}) -> [].
 
+-spec atomic_list_vars([katomic()]) -> [beam_ssa:var_name()].
 atomic_list_vars(Ps) ->
     foldl(fun (P, Vs) -> union(atomic_vars(P), Vs) end, [], Ps).
 
@@ -2331,6 +2591,7 @@ atomic_list_vars(Ps) ->
 %%  except those in the size field of binary segments and the key
 %%  field in map_pairs.
 
+-spec pat_vars(todo()) -> {[beam_ssa:var_name()], [beam_ssa:var_name()]}.
 pat_vars(#b_var{name=N}) -> {[],[N]};
 pat_vars(#b_literal{}) -> {[],[]};
 pat_vars(#cg_cons{hd=H,tl=T}) ->
@@ -2355,6 +2616,7 @@ pat_vars(#cg_map_pair{key=K,val=V}) ->
     {[],U2} = pat_vars(K),
     {union(U1, U2),New}.
 
+-spec pat_list_vars([todo()]) -> {[beam_ssa:var_name()], [beam_ssa:var_name()]}.
 pat_list_vars(Ps) ->
     foldl(fun (P, {Used0,New0}) ->
                   {Used,New} = pat_vars(P),
@@ -2376,6 +2638,7 @@ pat_list_vars(Ps) ->
              checks=[] :: [term()]
             }).
 
+-spec make_ssa_function(anno(), atom(), [beam_ssa:b_var()], todo(), state()) -> beam_ssa:b_function().
 make_ssa_function(Anno0, Name, As, #cg_match{}=Body,
                   #kern{module=Mod,vcount=Count0}) ->
     Anno1 = line_anno(Anno0),
@@ -2394,6 +2657,7 @@ make_ssa_function(Anno, Name, As, Body, St) ->
     Match = #cg_match{body=Body,ret=[]},
     make_ssa_function(Anno, Name, As, Match, St).
 
+-spec cg_fun(#cg_match{}, #cg{}) -> {todo(), #cg{}}.
 cg_fun(Ke, St0) ->
     {FailIs,St1} = make_exception_block(St0),
     {B,St} = cg(Ke, St1),
@@ -2401,6 +2665,7 @@ cg_fun(Ke, St0) ->
     Asm = fix_phis(Asm0),
     {build_map(Asm),St}.
 
+-spec make_exception_block(#cg{}) -> {[beam_ssa:b_set() | beam_ssa:b_ret() | {'label', number()}], #cg{}}.
 make_exception_block(St0) ->
     {Dst,St} = new_ssa_var(St0),
     Is = [{label,?EXCEPTION_BLOCK},
@@ -2415,6 +2680,20 @@ make_exception_block(St0) ->
 %% cg(Lkexpr, State) -> {[Ainstr],State}.
 %%  Generate SSA code.
 
+-spec cg(Lkexpr, #cg{}) -> {[todo()], #cg{}} when
+    Lkexpr :: beam_ssa:b_set()
+            | beam_ssa:b_ret()
+            | #cg_succeeded{}
+            | #cg_match{}
+            | #cg_seq{}
+            | #cg_call{}
+            | #cg_internal{}
+            | #cg_try{}
+            | #cg_catch{}
+            | #cg_break{}
+            | #cg_letrec_goto{}
+            | #cg_goto{}
+            | #cg_opaque{}.
 cg(#b_set{op=copy,dst=#b_var{name=Dst},args=[Arg0]}, St0) ->
     %% Create an alias for a variable or literal.
     Arg = ssa_arg(Arg0, St0),
@@ -2879,6 +3158,7 @@ match_fmf(F, LastFail, St0, [H|T]) ->
 %%  information, variables bound to literal values will only appear in
 %%  `debug_line` instructions if they are still in scope.
 
+-spec restore_vars(#cg{}, #cg{}) -> #cg{}.
 restore_vars(St0, St) ->
     St#cg{vars=St0#cg.vars}.
 
@@ -2887,6 +3167,7 @@ restore_vars(St0, St) ->
 %%  being generated for and the appropriate failure label to
 %%  use.
 
+-spec fail_context(#cg{}) -> {body | guard, label()}.
 fail_context(#cg{catch_label=Catch,bfail=Fail}) ->
     if
         Fail =/= ?EXCEPTION_BLOCK ->
@@ -3206,6 +3487,7 @@ new_bool_value(VarBase, Var, #cg{vars=Vars0}=St) ->
     Vars = Vars0#{VarBase => {bool,Var}},
     St#cg{vars=Vars}.
 
+-spec new_ssa_var(#cg{}) -> {beam_ssa:b_var(), #cg{}}.
 new_ssa_var(#cg{lcount=Uniq}=St) ->
     {#b_var{name=Uniq},St#cg{lcount=Uniq+1}}.
 
@@ -3213,14 +3495,15 @@ set_ssa_var(VarBase, Val, #cg{vars=Vars}=St)
   when is_atom(VarBase); is_integer(VarBase) ->
     St#cg{vars=Vars#{VarBase => Val}}.
 
+-spec new_label(#cg{}) -> {label(), #cg{}}.
 new_label(#cg{lcount=Next}=St) ->
     {Next,St#cg{lcount=Next+1}}.
 
-%% line_anno(Le) -> #{} | #{location:={File,Line}}.
 %%  Create a location annotation, containing information about the
 %%  current filename and line number.  The annotation should be
 %%  included in any operation that could cause an exception.
 
+-spec line_anno(list()) -> #{location => {string(), integer()}}.
 line_anno([Line,{file,Name}]) when is_integer(Line) ->
     line_anno_1(Name, Line);
 line_anno([{Line,Column},{file,Name}]) when is_integer(Line),
@@ -3232,6 +3515,7 @@ line_anno([_|_]=A) ->
 line_anno([]) ->
     #{}.
 
+-spec line_anno_1(string() | no_file, integer()) -> #{location => {string(), integer()}}.
 line_anno_1(no_file, _) ->
     #{};
 line_anno_1(_, 0) ->
@@ -3240,6 +3524,7 @@ line_anno_1(_, 0) ->
 line_anno_1(Name, Line) ->
     #{location => {Name,Line}}.
 
+-spec find_loc(list(), string() | no_file, integer()) -> {string() | no_file, integer()}.
 find_loc([Line|T], File, _) when is_integer(Line) ->
     find_loc(T, File, Line);
 find_loc([{Line, Column}|T], File, _) when is_integer(Line),
@@ -3347,5 +3632,6 @@ build_graph_1([], Lbls, BlockAcc) ->
 make_blocks(Lbls, [Last0|Is0]) ->
     Is = reverse(Is0),
     Last = beam_ssa:normalize(Last0),
+    % eqwalizer:ignore
     Block = #b_blk{is=Is,last=Last},
     [{L,Block} || L <- Lbls].
