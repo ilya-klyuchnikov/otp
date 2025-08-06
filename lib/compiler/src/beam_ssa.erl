@@ -95,7 +95,7 @@
                 prim_op() |
                 cg_prim_op().
 
--type anno() :: #{atom() => any()}.
+-type anno() :: #{atom() => dynamic()}.
 
 -type block_map() :: #{label()=>b_blk()}.
 -type dominator_map() :: #{label()=>[label()]}.
@@ -141,7 +141,7 @@
                       'bs_ensured_skip' |
                       'bs_get' | 'bs_get_position' | 'bs_match_string' |
                       'bs_restore' | 'bs_save' | 'bs_set_position' | 'bs_skip' |
-                      'copy' | 'match_fail' | 'put_tuple_arity' |
+                      'copy' | 'debug_line' | 'match_fail' | 'put_tuple_arity' |
                       'set_tuple_element' | 'succeeded' |
                       'update_record'.
 
