@@ -1076,7 +1076,7 @@ expand_opt(report, Os) ->
 expand_opt(return, Os) ->
     [return_errors,return_warnings|Os];
 expand_opt(r25, Os) ->
-    [no_ssa_opt_update_tuple, no_bs_match, no_min_max_bifs |
+    [no_ssa_opt_update_tuple, no_bs_match |
      expand_opt(r26, Os)];
 expand_opt(r26, Os) ->
     [no_bsm_opt | expand_opt(r27, Os)];

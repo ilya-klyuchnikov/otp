@@ -103,7 +103,6 @@ opt_opts(Mod) ->
                      (no_bs_match) -> true;
                      (no_copt) -> true;
                      (no_fun_opt) -> true;
-                     (no_min_max_bifs) -> true;
                      (no_module_opt) -> true;
                      (no_postopt) -> true;
                      (no_recv_opt) -> true;
