@@ -758,9 +758,9 @@ split_blocks_before(Ls, P, Blocks, Count) when is_map(Blocks) ->
 split_blocks_after(Ls, P, Blocks, Count) when is_map(Blocks) ->
     split_blocks_1(Ls, P, fun split_blocks_after_is/3, Blocks, Count).
 
--spec trim_unreachable(SSA0) -> SSA when
-      SSA0 :: block_map() | [{label(),b_blk()}],
-      SSA :: block_map() | [{label(),b_blk()}].
+-spec trim_unreachable
+    (block_map()) -> block_map();
+    ([{label(),b_blk()}]) -> [{label(),b_blk()}].
 
 %% trim_unreachable(Blocks0) -> Blocks.
 %%  Remove all unreachable blocks. Adjust all phi nodes so
