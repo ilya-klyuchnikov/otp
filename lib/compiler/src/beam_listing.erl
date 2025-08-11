@@ -26,7 +26,6 @@
 
 -include("core_parse.hrl").
 -include("beam_ssa.hrl").
--include("beam_disasm.hrl").
 
 -import(lists, [foldl/3, foreach/2]).
 
