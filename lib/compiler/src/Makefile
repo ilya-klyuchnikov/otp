@@ -113,7 +113,6 @@ BEAM_H = $(wildcard ../priv/beam_h/*.h)
 
 HRL_FILES= \
 	beam_asm.hrl \
-	beam_disasm.hrl \
 	beam_ssa_alias_debug.hrl \
 	beam_ssa_opt.hrl \
 	beam_ssa.hrl \

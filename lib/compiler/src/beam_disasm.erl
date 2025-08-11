@@ -37,23 +37,57 @@
 -author("Kostis Sagonas").
 
 -include("beam_opcodes.hrl").
--include("beam_disasm.hrl").
 -include("beam_asm.hrl").
 
 %%-----------------------------------------------------------------------
 
+-record(function, {name      :: atom(),
+		   arity     :: byte(),
+		   entry     :: beam_lib:label(),    %% unnecessary ?
+		   code = [] :: [instr()]}).
+
+-record(beam_file, {module               :: module(),
+		    labeled_exports = [] :: [beam_lib:labeled_entry()],
+		    attributes      = [] :: [beam_lib:attrib_entry()],
+		    compile_info    = [] :: [beam_lib:compinfo_entry()],
+		    code            = [] :: [#function{}]}).
+
+% -type beam_instr() :: 'bs_init_writable' | 'build_stacktrace'
+%                     | 'fclearerror' | 'if_end' | 'raw_raise'
+%                     | 'remove_message' | 'return' | 'send' | 'timeout'
+%                     | tuple().  %% XXX: Very underspecified - FIX THIS
+
 -type index()        :: non_neg_integer().
+-type atoms()        :: gb_trees:tree(index(), atom()).
+-type imports()      :: gb_trees:tree(index(), {'extfunc', module(), atom(), arity()}).
+-type labels()       :: gb_trees:tree(index(), mfa()).
 -type literals()     :: gb_trees:tree(index(), term()).
--type types()        :: gb_trees:tree(index(), term()).
--type symbolic_tag() :: 'a' | 'f' | 'h' | 'i' | 'u' | 'x' | 'y' | 'z'.
--type disasm_tag()   :: symbolic_tag() | 'fr' | 'atom' | 'float' | 'literal'.
--type disasm_term()  :: 'nil' | {disasm_tag(), _}.
+-type types()        :: gb_trees:tree(index(), type()).
+-type simple_tag()   :: a | f | h | i | u | x | y.
+-type symbolic_tag() :: simple_tag() | z.
+-type disasm_term()  :: 'nil' | disasm_value().
+
+-type z_value() :: {float, float()} | {z, integer()} | {fr, non_neg_integer()} | {literal, term()} | #tr{}.
+-type simple_value() :: {simple_tag(), integer()}.
+-type disasm_value() :: z_value() | simple_value() | {atom, atom()}.
+
+% "raw instruction"
+-type instr() :: {atom(), [instr_arg()]} | {func_info, {atom, atom()}, {atom, atom()}, number()}.
+-type label_instr() :: {label, [instr_arg()]} | {line, [instr_arg()]}.
+-type instr_arg() ::
+    disasm_term() |
+    {disasm_term(), disasm_term(), [disasm_term()]} |
+    {{disasm_term(), disasm_term(), [disasm_term()]}} |
+    {disasm_term(), disasm_term(), disasm_term(), disasm_term(), [disasm_term()]} |
+    {disasm_term(), disasm_term(), disasm_term(), disasm_term(), disasm_term(), disasm_term(), disasm_term(), [disasm_term()]}.
+
 
 -type asm_form() :: {module(),
                      [{atom(), arity()}],
                      [beam_lib:attrib_entry()],
                      [#function{}],
                      beam_lib:label()}.
+-type todo() :: dynamic().
 
 -export_type([asm_form/0]).
 
@@ -74,17 +108,17 @@
 %% function__arity(#function{arity = A}) -> A.
 %% function__entry(#function{entry = E}) -> E.
 
--spec function__code(#function{}) -> [beam_instr()].
+-spec function__code(#function{}) -> [instr()].
 function__code(#function{code = Code}) -> Code.
 
--spec function__code_update(#function{}, [beam_instr()]) -> #function{}.
+-spec function__code_update(#function{}, [instr()]) -> #function{}.
 function__code_update(Function, NewCode) ->
   Function#function{code = NewCode}.
 
 %%-----------------------------------------------------------------------
 %% Error information
 
--spec format_error({'internal',term()} | {'error',atom(),term()}) -> string().
+-spec format_error({'internal',term()} | {'error',atom(),term()}) -> io_lib:chars().
 
 format_error({internal,Error}) ->
     io_lib:format("~p: disassembly failed with reason ~P.",
@@ -172,7 +206,7 @@ pp_instr(I) ->
 %%   Call `format_error({error, Module, Reason})' for an error string.
 %%-----------------------------------------------------------------------
 
--spec file(file:filename() | binary()) -> #beam_file{} | {'error',atom(),_}.
+-spec file(file:filename() | binary()) -> #beam_file{} | {'error', atom(), _}.
 
 file(File) ->
     try process_chunks(File)
@@ -184,6 +218,7 @@ file(File) ->
 %% Interface might need to be revised -- do not depend on it.
 %%-----------------------------------------------------------------------
 
+-spec process_chunks(file:filename() | binary()) -> #beam_file{} | {'error', atom(), _}.
 process_chunks(F) ->
     case beam_lib:chunks(F, [atoms,"Code","StrT",
 			     indexed_imports,labeled_exports]) of
@@ -218,6 +253,7 @@ process_chunks(F) ->
 		       attributes = Attributes,
 		       compile_info = CompInfo,
 		       code = Code};
+    % eqwalizer:ignore
 	Error -> Error
     end.
 
@@ -235,14 +271,14 @@ optional_chunk(F, ChunkTag) ->
 %% Disassembles the lambda (fun) table of a BEAM file.
 %%-----------------------------------------------------------------------
 
--type l_info() :: {non_neg_integer(), {_,_,_,_,_,_}}.
--spec beam_disasm_lambdas('none' | binary(), gb_trees:tree(index(), _)) ->
-        'none' | [l_info()].
+-type l_info() :: {non_neg_integer(), {atom(),integer(),integer(),integer(),integer(),integer()}}.
+-spec beam_disasm_lambdas('none' | binary(), atoms()) -> [l_info()].
 
-beam_disasm_lambdas(none, _) -> none;
+beam_disasm_lambdas(none, _) -> [];
 beam_disasm_lambdas(<<_:32,Tab/binary>>, Atoms) ->
     disasm_lambdas(Tab, Atoms, 0).
 
+-spec disasm_lambdas(binary(), atoms(), integer()) -> [l_info()].
 disasm_lambdas(<<F:32,A:32,Lbl:32,Index:32,NumFree:32,OldUniq:32,More/binary>>,
 	       Atoms, OldIndex) ->
     Info = {lookup(F, Atoms),A,Lbl,Index,NumFree,OldUniq},
@@ -269,6 +305,7 @@ beam_disasm_types(<<Version:32,Count:32,Table0/binary>>) ->
 beam_disasm_types(<<_/binary>>) ->
     gb_trees:empty().
 
+-spec disasm_types(binary(), integer()) -> [{integer(), type()}].
 disasm_types(Types0, Index) ->
     case beam_types:decode_ext(Types0) of
         done ->
@@ -283,6 +320,16 @@ disasm_types(Types0, Index) ->
 %%   - This list is then split into functions and all names are resolved.
 %%-----------------------------------------------------------------------
 
+-spec beam_disasm_code(
+    CodeBin :: binary(),
+    Atoms :: atoms(),
+    Imports :: imports(),
+    Str :: binary(),
+    Lambdas :: [l_info()],
+    Literals :: literals(),
+    Types :: types(),
+    M :: module()
+) -> [#function{}].
 beam_disasm_code(<<_SS:32, % Sub-Size (length of information before code)
 		  _IS:32,  % Instruction Set Identifier (always 0)
 		  _OM:32,  % Opcode Max
@@ -306,6 +353,11 @@ beam_disasm_code(<<_SS:32, % Sub-Size (length of information before code)
 
 %%-----------------------------------------------------------------------
 
+-spec disasm_code(
+    Bs :: [byte()],
+    Atoms :: atoms(),
+    Literals :: literals(),
+    Types :: types()) -> [instr()].
 disasm_code([B|Bs], Atoms, Literals, Types) ->
     {Instr,RestBs} = disasm_instr(B, Bs, Atoms, Literals, Types),
     [Instr|disasm_code(RestBs, Atoms, Literals, Types)];
@@ -327,11 +379,13 @@ disasm_code([], _, _, _) ->
 %% before R8 didn't care to remove the redundant ones.
 %%-----------------------------------------------------------------------
 
+-spec get_function_chunks([instr()]) -> [#function{}].
 get_function_chunks([]) ->
     ?exit(empty_code_segment);
 get_function_chunks(Code) ->
     get_funs(labels_r(Code, [])).
 
+-spec labels_r([instr()], [label_instr()]) -> {[label_instr()], [instr()]}.
 labels_r([], R) -> {R, []};
 labels_r([{label,_}=I|Is], R) ->
     labels_r(Is, [I|R]);
@@ -339,6 +393,7 @@ labels_r([{line,_}=I|Is], R) ->
     labels_r(Is, [I|R]);
 labels_r(Is, R) -> {R, Is}.
 
+-spec get_funs({[label_instr()], [instr()]}) -> [#function{}].
 get_funs({[],[]}) -> [];
 get_funs({_,[]}) ->
     ?exit(no_func_info_in_code_segment);
@@ -353,6 +408,7 @@ get_funs({LsR0,[{func_info,[{atom,M}=AtomM,{atom,F}=AtomF,ArityArg]}|Code0]})
 	       code=lists:reverse(LsR0, [{func_info,AtomM,AtomF,Arity}|Code])}
      |get_funs({LsR,RestCode})].
 
+-spec get_fun([instr()], [instr()]) -> {[label_instr()], [instr()], [instr()]}.
 get_fun([{func_info,_}|_]=Is, R0) ->
     {LsR,R} = labels_r(R0, []),
     {LsR,lists:reverse(R),Is};
@@ -368,11 +424,13 @@ get_fun([], R) ->
 %% Collects local labels -- I am not sure this is 100% what is needed.
 %%-----------------------------------------------------------------------
 
+-spec local_labels([#function{}]) -> [{index(), mfa()}].
 local_labels(Funs) ->
     lists:sort(lists:foldl(fun (F, R) ->
 				   local_labels_1(function__code(F), R)
 			   end, [], Funs)).
 
+-spec local_labels_1([instr()], [{index(), mfa()}]) -> [{index(), mfa()}].
 local_labels_1(Code0, R) ->
     Code1 = lists:dropwhile(fun({label,_}) -> true;
 			       ({line,_}) -> true;
@@ -381,6 +439,7 @@ local_labels_1(Code0, R) ->
     [{func_info,{atom,M},{atom,F},A}|Code] = Code1,
     local_labels_2(Code, R, {M,F,A}).
 
+-spec local_labels_2([instr()], [{index(), mfa()}], mfa()) -> [{index(), mfa()}].
 local_labels_2([{label,[{u,L}]}|Code], R, MFA) ->
     local_labels_2(Code, [{L,MFA}|R], MFA);
 local_labels_2(_, R, _) -> R.
@@ -390,6 +449,13 @@ local_labels_2(_, R, _) -> R.
 %% in a generic way; indexing instructions are handled separately.
 %%-----------------------------------------------------------------------
 
+-spec disasm_instr(
+    B :: byte(),
+    Bs :: [byte()],
+    Atoms :: atoms(),
+    Literals :: literals(),
+    Types :: types()
+) -> {instr(), [byte()]}.
 disasm_instr(B, Bs, Atoms, Literals, Types) ->
     {SymOp, Arity} = beam_opcodes:opname(B),
     case SymOp of
@@ -438,6 +504,13 @@ disasm_instr(B, Bs, Atoms, Literals, Types) ->
 %%   where each case is of the form [symbol,{f,Label}].
 %%-----------------------------------------------------------------------
 
+-spec disasm_select_inst(
+    Inst :: select_val | select_tuple_arity, 
+    Bs :: [byte()],
+    Atoms :: atoms(),
+    Literals :: literals(),
+    Types :: types()
+) -> {instr(), [byte()]}.
 disasm_select_inst(Inst, Bs, Atoms, Literals, Types) ->
     {X, Bs1} = decode_arg(Bs, Atoms, Literals, Types),
     {F, Bs2} = decode_arg(Bs1, Atoms, Literals, Types),
@@ -447,6 +520,14 @@ disasm_select_inst(Inst, Bs, Atoms, Literals, Types) ->
     {List, RestBs} = decode_n_args(Len, Bs4, Atoms, Literals, Types),
     {{Inst, [X,F,{Z,U,List}]}, RestBs}.
 
+-spec disasm_map_inst(
+    Inst :: put_map_assoc | put_map_exact | get_map_elements | has_map_fields,
+    Arity :: integer(),
+    Bs :: [byte()],
+    Atoms :: atoms(),
+    Literals :: literals(),
+    Types :: types()
+) -> {instr(), [byte()]}.
 disasm_map_inst(Inst, Arity, Bs0, Atoms, Literals, Types) ->
     {Args0,Bs1} = decode_n_args(Arity, Bs0, Atoms, Literals, Types),
     %% no droplast ..
@@ -457,6 +538,12 @@ disasm_map_inst(Inst, Arity, Bs0, Atoms, Literals, Types) ->
     {List, RestBs} = decode_n_args(Len, Bs2, Atoms, Literals, Types),
     {{Inst, Args ++ [{Z,U,List}]}, RestBs}.
 
+-spec disasm_put_tuple2(
+    Bs :: [byte()],
+    Atoms :: atoms(),
+    Literals :: literals(),
+    Types :: types()
+) -> {instr(), [byte()]}.
 disasm_put_tuple2(Bs, Atoms, Literals, Types) ->
     {X, Bs1} = decode_arg(Bs, Atoms, Literals, Types),
     {Z, Bs2} = decode_arg(Bs1, Atoms, Literals, Types),
@@ -465,6 +552,12 @@ disasm_put_tuple2(Bs, Atoms, Literals, Types) ->
     {List, RestBs} = decode_n_args(Len, Bs3, Atoms, Literals, Types),
     {{put_tuple2, [X,{Z,U,List}]}, RestBs}.
 
+-spec disasm_make_fun3(
+    Bs :: [byte()],
+    Atoms :: atoms(),
+    Literals :: literals(),
+    Types :: types()
+) -> {instr(), [byte()]}.
 disasm_make_fun3(Bs, Atoms, Literals, Types) ->
     {Fun, Bs1} = decode_arg(Bs, Atoms, Literals, Types),
     {Dst, Bs2} = decode_arg(Bs1, Atoms, Literals, Types),
@@ -474,6 +567,12 @@ disasm_make_fun3(Bs, Atoms, Literals, Types) ->
     {List, RestBs} = decode_n_args(Len, Bs4, Atoms, Literals, Types),
     {{make_fun3, [Fun,Dst,{Z,U,List}]}, RestBs}.
 
+-spec disasm_init_yregs(
+    Bs :: [byte()],
+    Atoms :: atoms(),
+    Literals :: literals(),
+    Types :: types()
+) -> {instr(), [byte()]}.
 disasm_init_yregs(Bs1, Atoms, Literals, Types) ->
     {Z, Bs2} = decode_arg(Bs1, Atoms, Literals, Types),
     {U, Bs3} = decode_arg(Bs2, Atoms, Literals, Types),
@@ -481,6 +580,12 @@ disasm_init_yregs(Bs1, Atoms, Literals, Types) ->
     {List, RestBs} = decode_n_args(Len, Bs3, Atoms, Literals, Types),
     {{init_yregs, [{Z,U,List}]}, RestBs}.
 
+-spec disasm_bs_create_bin(
+    Bs :: [byte()],
+    Atoms :: atoms(),
+    Literals :: literals(),
+    Types :: types()
+) -> {instr(), [byte()]}.
 disasm_bs_create_bin(Bs0, Atoms, Literals, Types) ->
     {A1, Bs1} = decode_arg(Bs0, Atoms, Literals, Types),
     {A2, Bs2} = decode_arg(Bs1, Atoms, Literals, Types),
@@ -493,6 +598,12 @@ disasm_bs_create_bin(Bs0, Atoms, Literals, Types) ->
     {List, RestBs} = decode_n_args(Len, Bs7, Atoms, Literals, Types),
     {{bs_create_bin, [{A1,A2,A3,A4,A5,Z,U,List}]}, RestBs}.
 
+-spec disasm_bs_match(
+    Bs :: [byte()],
+    Atoms :: atoms(),
+    Literals :: literals(),
+    Types :: types()
+) -> {instr(), [byte()]}.
 disasm_bs_match(Bs0, Atoms, Literals, Types) ->
     {A1, Bs1} = decode_arg(Bs0, Atoms, Literals, Types),
     {A2, Bs2} = decode_arg(Bs1, Atoms, Literals, Types),
@@ -503,6 +614,12 @@ disasm_bs_match(Bs0, Atoms, Literals, Types) ->
     {List, RestBs} = decode_n_args(Len, Bs7, Atoms, Literals, Types),
     {{bs_match, [{A1,A2,Z,U,List}]}, RestBs}.
 
+-spec disasm_update_record(
+    Bs :: [byte()],
+    Atoms :: atoms(),
+    Literals :: literals(),
+    Types :: types()
+) -> {instr(), [byte()]}.
 disasm_update_record(Bs1, Atoms, Literals, Types) ->
     {Hint, Bs2} = decode_arg(Bs1, Atoms, Literals, Types),
     {Size, Bs3} = decode_arg(Bs2, Atoms, Literals, Types),
@@ -523,8 +640,7 @@ disasm_update_record(Bs1, Atoms, Literals, Types) ->
 %%   assign a type to it
 %%-----------------------------------------------------------------------
 
--spec decode_arg([byte(),...]) -> {{disasm_tag(),_}, [byte()]}.
-
+-spec decode_arg([byte(),...]) -> {disasm_value(), [byte()]}.
 decode_arg([B|Bs]) ->
     Tag = decode_tag(B band 2#111),
     ?NO_DEBUG('Tag = ~p, B = ~p, Bs = ~p~n', [Tag, B, Bs]),
@@ -536,10 +652,7 @@ decode_arg([B|Bs]) ->
 	    decode_int(Tag, B, Bs)
     end.
 
--spec decode_arg([byte(),...],
-                 gb_trees:tree(index(), _), literals(), types()) ->
-        {disasm_term(), [byte()]}.
-
+-spec decode_arg([byte(),...], atoms(), literals(), types()) -> {disasm_term(), [byte()]}.
 decode_arg([B|Bs0], Atoms, Literals, Types) ->
     Tag = decode_tag(B band 2#111),
     ?NO_DEBUG('Tag = ~p, B = ~p, Bs = ~p~n', [Tag, B, Bs0]),
@@ -571,6 +684,11 @@ decode_arg([B|Bs0], Atoms, Literals, Types) ->
 %%   beam_asm:encode(1, 429496729501) = [121,99,255,255,255,157]
 %%-----------------------------------------------------------------------
 
+-spec decode_int(
+    Tag :: simple_tag(),
+    B :: byte(),
+    Bs :: [byte()]
+) -> {{simple_tag(), integer()}, [byte()]}.
 decode_int(Tag,B,Bs) when (B band 16#08) =:= 0 ->
     %% N < 16 = 4 bits, NNNN:0:TTT
     N = B bsr 4,
@@ -620,6 +738,13 @@ decode_negative(N, Len) ->
 %% Decodes lists and floating point numbers.
 %%-----------------------------------------------------------------------
 
+-spec decode_z_tagged(
+    Tag :: z,
+    B :: byte(),
+    Bs :: [byte()],
+    Literals :: literals() | no_literals,
+    Types :: types() | no_types
+) -> {z_value(), [byte()]}.
 decode_z_tagged(Tag,B,Bs,Literals,Types) when (B band 16#08) =:= 0 ->
     N = B bsr 4,
     case N of
@@ -630,9 +755,11 @@ decode_z_tagged(Tag,B,Bs,Literals,Types) when (B band 16#08) =:= 0 ->
 	2 -> % fr
 	    decode_fr(Bs);
 	3 -> % allocation list
-	    decode_alloc_list(Bs, Literals);
+        % eqwalizer:ignore - alloc_list
+	    decode_alloc_list(Bs);
 	4 -> % literal
 	    {{u,LitIndex},RestBs} = decode_arg(Bs),
+        % eqwalizer:ignore - no_literals
 	    case gb_trees:get(LitIndex, Literals) of
 		Float when is_float(Float) ->
 		    {{float,Float},RestBs};
@@ -640,6 +767,7 @@ decode_z_tagged(Tag,B,Bs,Literals,Types) when (B band 16#08) =:= 0 ->
 		    {{literal,Literal},RestBs}
 	    end;
         5 -> % type-tagged register
+            % eqwalizer:ignore - no_types
             decode_tr(Bs, Types);
 	_ ->
 	    ?exit({decode_z_tagged,{invalid_extended_tag,N}})
@@ -647,17 +775,17 @@ decode_z_tagged(Tag,B,Bs,Literals,Types) when (B band 16#08) =:= 0 ->
 decode_z_tagged(_,B,_,_,_) ->
     ?exit({decode_z_tagged,{weird_value,B}}).
 
--spec decode_float([byte(),...]) -> {{'float', float()}, [byte()]}.
-
+-spec decode_float([byte(),...]) -> {{float, float()}, [byte()]}.
 decode_float(Bs) ->
     {FL,RestBs} = take_bytes(8,Bs),
     <<Float:64/float>> = list_to_binary(FL),
     {{float,Float},RestBs}.
 
--spec decode_tr([byte(),...], term()) -> {#tr{}, [byte()]}.
+-spec decode_tr([byte(),...], types()) -> {#tr{}, [byte()]}.
 decode_tr(Bs, Types) ->
     {Reg, RestBs0} = decode_arg(Bs),
     {{u, TypeIdx}, RestBs} = decode_arg(RestBs0),
+    % eqwalizer:ignore
     {#tr{r=Reg,t=gb_trees:get(TypeIdx, Types)}, RestBs}.
 
 -spec decode_fr([byte(),...]) -> {{'fr', non_neg_integer()}, [byte()]}.
@@ -666,13 +794,17 @@ decode_fr(Bs) ->
     {{u,Fr},RestBs} = decode_arg(Bs),
     {{fr,Fr},RestBs}.
 
-decode_alloc_list(Bs, Literals) ->
+-spec decode_alloc_list([byte()]) -> {{u, {alloc, List}}, [byte()]} when
+    List :: [{words, number()} | {floats, number()} | {funs, number()}].
+decode_alloc_list(Bs) ->
     {{u,N},RestBs} = decode_arg(Bs),
-    decode_alloc_list_1(N, Literals, RestBs, []).
+    decode_alloc_list_1(N, RestBs, []).
 
-decode_alloc_list_1(0, _Literals, RestBs, Acc) ->
+-spec decode_alloc_list_1(integer(), [byte()], Acc) -> {{u, {alloc, Acc}}, [byte()]} when
+    Acc :: [{words, number()} | {floats, number()} | {funs, number()}].
+decode_alloc_list_1(0, RestBs, Acc) ->
     {{u,{alloc,lists:reverse(Acc)}},RestBs};
-decode_alloc_list_1(N, Literals, Bs0, Acc) ->
+decode_alloc_list_1(N, Bs0, Acc) ->
     {{u,Type},Bs1} = decode_arg(Bs0),
     {{u,Val},Bs} = decode_arg(Bs1),
     Res = case Type of
@@ -680,7 +812,7 @@ decode_alloc_list_1(N, Literals, Bs0, Acc) ->
 	      1 -> {floats,Val};
               2 -> {funs,Val}
 	  end,
-    decode_alloc_list_1(N-1, Literals, Bs, [Res|Acc]).
+    decode_alloc_list_1(N-1, Bs, [Res|Acc]).
 
 %%-----------------------------------------------------------------------
 %% take N bytes from a stream, return {Taken_bytes, Remaining_bytes}
@@ -691,6 +823,7 @@ decode_alloc_list_1(N, Literals, Bs0, Acc) ->
 take_bytes(N, Bs) ->
     take_bytes(N, Bs, []).
 
+-spec take_bytes(integer(), [byte()], [byte()]) -> {[byte()], [byte()]}.
 take_bytes(N, [B|Bs], Acc) when N > 0 ->
     take_bytes(N-1, Bs, [B|Acc]);
 take_bytes(0, Bs, Acc) ->
@@ -701,9 +834,11 @@ take_bytes(0, Bs, Acc) ->
 %% build  (Bn << 8*n) bor ... bor (B1 << 8) bor (B0 << 0)
 %%-----------------------------------------------------------------------
 
+-spec build_arg([byte()]) -> integer().
 build_arg(Bs) ->
     build_arg(Bs, 0).
 
+-spec build_arg([byte()], integer()) -> integer().
 build_arg([B|Bs], N) ->
     build_arg(Bs, (N bsl 8) bor B);
 build_arg([], N) ->
@@ -713,9 +848,11 @@ build_arg([], N) ->
 %% Decodes a bunch of arguments and returns them in a list
 %%-----------------------------------------------------------------------
 
+-spec decode_n_args(integer(), [byte()], atoms(), literals(), types()) -> {[disasm_term()], [byte()]}.
 decode_n_args(N, Bs, Atoms, Literals, Types) when N >= 0 ->
     decode_n_args(N, [], Bs, Atoms, Literals, Types).
 
+-spec decode_n_args(integer(), [disasm_term()], [byte()], atoms(), literals(), types()) -> {[disasm_term()], [byte()]}.
 decode_n_args(N, Acc, Bs0, Atoms, Literals, Types) when N > 0 ->
     {A1,Bs} = decode_arg(Bs0, Atoms, Literals, Types),
     decode_n_args(N-1, [A1|Acc], Bs, Atoms, Literals, Types);
@@ -753,6 +890,15 @@ decode_tag(?tag_z) -> z.
 %%  representation means it is simpler to iterate over all args, etc.
 %%-----------------------------------------------------------------------
 
+-spec resolve_names(
+    Fun :: [instr()],
+    Imports :: imports(),
+    Str :: binary(),
+    Lbls :: labels(),
+    Lambdas :: [l_info()],
+    Literals :: literals(),
+    M :: module()
+) -> todo().
 resolve_names(Fun, Imports, Str, Lbls, Lambdas, Literals, M) ->
     [resolve_inst(Instr, Imports, Str, Lbls, Lambdas, Literals, M) || Instr <- Fun].
 
@@ -766,6 +912,9 @@ resolve_names(Fun, Imports, Str, Lbls, Lambdas, Literals, M) ->
 %% - call_fun2/3 (OTP 25)
 %%
 
+-spec resolve_inst(
+    instr(), imports(), binary(), labels(), [l_info()], literals(), module()
+) -> todo().
 resolve_inst({make_fun2,Args}, _, _, _, Lambdas, _, M) ->
     [OldIndex] = resolve_args(Args),
     {OldIndex,{F,A,_Lbl,_Index,NumFree,OldUniq}} =
@@ -792,6 +941,7 @@ resolve_inst(Instr, Imports, Str, Lbls, _Lambdas, _Literals, _M) ->
     %% io:format(?MODULE_STRING":resolve_inst ~p.~n", [Instr]),
     resolve_inst(Instr, Imports, Str, Lbls).
 
+-spec resolve_inst(instr(), imports(), binary(), labels()) -> todo().
 resolve_inst({label,[{u,L}]},_,_,_) ->
     {label,L};
 resolve_inst(FuncInfo,_,_,_) when element(1, FuncInfo) =:= func_info -> 
@@ -1318,8 +1468,21 @@ resolve_inst(X,_,_,_) -> ?exit({resolve_inst,X}).
 %% Resolves arguments in a generic way.
 %%-----------------------------------------------------------------------
 
+-type arg() ::
+    integer()
+    | #tr{}
+    | beam_reg()
+    | {literal, term()}
+    | {atom, atom()}
+    | {integer, integer()}
+    | {f, integer()}
+    | nil
+    | {float, float()}.
+
+-spec resolve_args([instr_arg()]) -> [arg()].
 resolve_args(Args) -> [resolve_arg(A) || A <- Args].
 
+-spec resolve_arg(instr_arg()) -> arg().
 resolve_arg(#tr{r=Reg} = Arg) -> _ = resolve_arg(Reg), Arg;
 resolve_arg({x,N} = Arg) when is_integer(N), N >= 0 -> Arg;
 resolve_arg({y,N} = Arg) when is_integer(N), N >= 0 -> Arg;
@@ -1332,8 +1495,10 @@ resolve_arg({float,F} = Arg) when is_float(F) -> Arg;
 resolve_arg({literal,_} = Arg) -> Arg;
 resolve_arg(nil) -> nil.
 
+-spec resolve_arg_unsigned(term()) -> integer().
 resolve_arg_unsigned({u,N}) when is_integer(N), N >= 0 -> N.
 
+-spec resolve_arg_integer(term()) -> {integer, integer()}.
 resolve_arg_integer({i,N}) when is_integer(N) -> {integer,N}.
 
 %%-----------------------------------------------------------------------
@@ -1392,6 +1557,7 @@ resolve_bs_match_flags({literal,[_|_]}=Flags) -> Flags.
 %% Also see "erl_bits.h".
 %%-----------------------------------------------------------------------
 
+-spec decode_field_flags(integer()) -> {field_flags, [signed | native | little]}.
 decode_field_flags(0) ->
     {field_flags,[]};
 decode_field_flags(FieldFlags) when is_integer(FieldFlags) ->
@@ -1407,15 +1573,21 @@ decode_field_flags(FieldFlags) when is_integer(FieldFlags) ->
 %% Private Utilities
 %%-----------------------------------------------------------------------
 
+-spec mk_imports(
+    [{index(), module(), Function :: atom(), arity()}]
+) -> imports().
 mk_imports(ImportList) ->
     gb_trees:from_orddict([{I,{extfunc,M,F,A}} ||
                               {I,M,F,A} <:- ImportList]).
 
+-spec mk_atoms([{integer(), atom()}]) -> atoms().
 mk_atoms(AtomList) ->
     gb_trees:from_orddict(AtomList).
 
+-spec mk_labels([{index(), mfa()}]) -> labels().
 mk_labels(LabelList) ->
     gb_trees:from_orddict(LabelList).
 
+-spec lookup(K, gb_trees:tree(K, V)) -> V.
 lookup(I, Imports) ->
     gb_trees:get(I, Imports).
