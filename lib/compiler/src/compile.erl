@@ -1109,7 +1109,7 @@ the error.
 This function is usually called implicitly when an `ErrorInfo`
 structure is processed.
 """.
--spec format_error(ErrorDescription :: error_description()) -> string().
+-spec format_error(ErrorDescription :: error_description()) -> io_lib:chars().
 
 format_error({obsolete_option,Ver}) ->
     io_lib:fwrite("the ~p option is no longer supported", [Ver]);
