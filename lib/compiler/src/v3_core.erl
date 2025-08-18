@@ -934,8 +934,7 @@ expr({'catch',L,E0}, St0) ->
 expr({'fun',L,{function,F,A}}, St0) ->
     Lanno = full_anno(L, St0),
     {#c_var{anno=Lanno,name={F,A}},[],St0};
-expr({'fun',L,{function,M,F,A}}, St0) ->
-    % eqwalizer:ignore according to erl_parse API M/F can be module, A - arity
+expr({'fun',L,{function,M,F,A}}, St0) ->    
     {As,Aps,St1} = safe_list([M,F,A], St0),
     Lanno = full_anno(L, St1),
     {#icall{anno=#a{anno=Lanno},
