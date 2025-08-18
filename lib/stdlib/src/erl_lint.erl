@@ -1328,6 +1328,7 @@ disallowed_compile_flags(Forms, St0) ->
 		   true ->
 		       Errors1 ++ St0#lint.errors
 	       end,
+    % eqwalizer:ignore - this is hack with disallowed_nowarn_bif_clash
     St0#lint{errors=Errors}.
 
 %% Do some further checking after the forms have been traversed and
