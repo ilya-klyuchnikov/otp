@@ -960,14 +960,17 @@ resolve_inst({call_ext_last,[{u,N},{u,MFAix},{u,X}]},Imports,_,_) ->
     {call_ext_last,N,lookup(MFAix+1,Imports),X};
 resolve_inst({bif0,Args},Imports,_,_) ->
     [Bif,Reg] = resolve_args(Args),
+    % eqwalizer:ignore Bif :: integer()
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
     {bif,BifName,nofail,[],Reg};
 resolve_inst({bif1,Args},Imports,_,_) ->
     [F,Bif,A1,Reg] = resolve_args(Args),
+    % eqwalizer:ignore Bif :: integer()
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
     {bif,BifName,F,[A1],Reg};
 resolve_inst({bif2,Args},Imports,_,_) ->
     [F,Bif,A1,A2,Reg] = resolve_args(Args),
+    % eqwalizer:ignore Bif :: integer()
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
     {bif,BifName,F,[A1,A2],Reg};
 resolve_inst({allocate,[{u,X0},{u,X1}]},_,_,_) ->
@@ -1229,10 +1232,12 @@ resolve_inst({bs_restore2=I,[Ms,{atom,_}=Atom]},_,_,_) ->
 %%
 resolve_inst({gc_bif1,Args},Imports,_,_) ->
     [F,Live,Bif,A1,Reg] = resolve_args(Args),
+    % eqwalizer:ignore Bif :: integer()
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
     {gc_bif,BifName,F,Live,[A1],Reg};
 resolve_inst({gc_bif2,Args},Imports,_,_) ->
     [F,Live,Bif,A1,A2,Reg] = resolve_args(Args),
+    % eqwalizer:ignore Bif :: integer()
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
     {gc_bif,BifName,F,Live,[A1,A2],Reg};
 
@@ -1241,6 +1246,7 @@ resolve_inst({gc_bif2,Args},Imports,_,_) ->
 %%
 resolve_inst({gc_bif3,Args},Imports,_,_) ->
     [F,Live,Bif,A1,A2,A3,Reg] = resolve_args(Args),
+    % eqwalizer:ignore Bif :: integer()
     {extfunc,_Mod,BifName,_Arity} = lookup(Bif+1,Imports),
     {gc_bif,BifName,F,Live,[A1,A2,A3],Reg};
 
@@ -1509,6 +1515,7 @@ resolve_bs_create_bin_list(
   [{atom,string}=Type,Seg0,Unit0,Flags,Offset0,Size0|Rest], Strings) ->
     [Seg,Unit,Offset,{integer,Len}=Size] =
         resolve_args([Seg0,Unit0,Offset0,Size0]),
+    % eqwalizer:ignore Offset :: integer()
     <<_:Offset/binary,Bin:Len/binary,_/binary>> = Strings,
     [Type,Seg,Unit,Flags,{string,Bin},Size |
      resolve_bs_create_bin_list(Rest, Strings)];
