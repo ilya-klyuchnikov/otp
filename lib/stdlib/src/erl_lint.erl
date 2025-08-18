@@ -4712,6 +4712,7 @@ handle_generator(P,E,Vt,Uvt,St0) ->
 comprehension_pattern([_|_]=Ps, Vt, St) ->
     Mps = [K || {map_field_exact,_,K,_} <- Ps] ++ [V || {map_field_exact,_,_,V} <- Ps],
     Ps1 = [P || P <- Ps, element(1,P)=/=map_field_exact],
+    % eqwalizer:ignore - {map_field_exact, ...} are filtered out
     pattern_list(Ps1++Mps, Vt, [], St);
 comprehension_pattern({map_field_exact,_,K,V}, Vt, St) ->
     pattern_list([K,V], Vt, [], St);
