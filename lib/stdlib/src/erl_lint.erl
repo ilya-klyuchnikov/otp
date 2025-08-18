@@ -826,7 +826,7 @@ parse_options([Opt0|Opts], Enabled0) when is_atom(Opt0) ->
                             {none,none}
                     end,
     Opt = try
-              binary_to_existing_atom(Opt2)
+              binary_to_existing_atom( <<_/binary>> = Opt2)
           catch
               _:_ ->
                   []
@@ -5407,6 +5407,7 @@ check_format_1(_As) ->
 
 -spec canonicalize_string(erl_parse:abstract_expr() | no_argument_list) -> erl_parse:abstract_expr() | no_argument_list.
 canonicalize_string({string,Anno,Cs}) ->
+    % eqwalizer:ignore - explicit annotation is needed here
     foldr(fun (C, T) -> {cons,Anno,{integer,Anno,C},T} end, {nil,Anno}, Cs);
 canonicalize_string(Term) ->
     Term.
@@ -5519,6 +5520,7 @@ extract_sequences(Fmt, Need0, Strict) ->
     case string:find(Fmt, [$~]) of
         nomatch -> {ok,lists:reverse(Need0)};         %That's it
         [$~|Fmt1] ->
+            % eqwalizer:ignore Fmt1 should be a string
             case extract_sequence(1, Fmt1, Need0, Strict) of
                 {ok,Need1,Rest} -> extract_sequences(Rest, Need1, Strict);
                 Error -> Error
@@ -5562,6 +5564,7 @@ extract_sequence(4, Fmt0, Need0, Strict) ->
             Error;
         {[C|Fmt], Modifiers, Need1} when Strict ->
             maybe
+                % eqwalizer:fixme - maybe
                 ok ?= check_modifiers(C, Modifiers),
                 extract_sequence(5, [C|Fmt], Need1, Strict)
             end;
