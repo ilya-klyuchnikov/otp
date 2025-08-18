@@ -3972,6 +3972,7 @@ check_type_2(I, SeenVars, St) ->
     case erl_eval:partial_eval(I) of
         {integer,_A,_Integer} -> {SeenVars, St};
         _Other ->
+            % eqwalizer:ignore I - sloppy!
             {SeenVars, add_error(element(2, I), {type_syntax, integer}, St)}
     end.
 
