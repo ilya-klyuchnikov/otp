@@ -4624,8 +4624,11 @@ lc_quals([{m_generate_strict,_Anno,P,E} | Qs], Vt0, Uvt0, St0) ->
     lc_quals(Qs, Vt, Uvt, St);
 lc_quals([F|Qs], Vt, Uvt, St0) ->
     Info = is_guard_test2_info(St0),
+    % eqwalizer:fixme - occurrence typing for list head
     {Fvt,St1} = case is_guard_test2(F, Info) of
+            % eqwalizer:fixme - occurrence typing for list head
 		    true -> guard_test(F, Vt, St0);
+            % eqwalizer:fixme - occurrence typing for list head
 		    false -> expr(F, Vt, St0)
 		end,
     lc_quals(Qs, vtupdate(Fvt, Vt), Uvt, St1);
