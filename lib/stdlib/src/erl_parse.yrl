@@ -874,7 +874,7 @@ processed (see section [Error Information](#module-error-information)).
 
 -type af_ta_list() :: [{type_name(), arity()}].
 
--type af_compile() :: {'attribute', anno(), 'compile', any()}.
+-type af_compile() :: {'attribute', anno(), 'compile', dynamic()}.
 
 -type af_file() :: {'attribute', anno(), 'file', {string(), anno()}}.
 
