@@ -3228,7 +3228,7 @@ expr({ssa_check_when,_Anno,_WantedResult,_Args,_Tag,_Exprs}, _Vt, St) ->
 
 %% Check a call to function without a module name. This can be a call
 %% to a BIF or a local function.
--spec check_call(anno(), erl_parse:function_name(), [erl_parse:abstract_expr() | undefined], anno(), lint_state()) -> lint_state().
+-spec check_call(anno(), erl_parse:function_name(), [erl_parse:abstract_expr()], anno(), lint_state()) -> lint_state().
 check_call(Anno, record_info, [_,_]=As, Aa, St0) ->
     check_record_info_call(Anno, Aa, As, St0);
 check_call(Anno, F, As, _Aa, St0) ->
