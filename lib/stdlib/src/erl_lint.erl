@@ -3823,7 +3823,7 @@ check_type_1(Types, SeenVars, St) ->
     check_type_2(Types, SeenVars, St).
 
 -spec check_type_2(
-    erl_parse:abstract_type() | erl_parse:af_typed_field() | {type, anno(), product, [erl_parse:abstract_type()]},
+    erl_parse:abstract_type() | erl_parse:af_typed_field() | [erl_parse:af_typed_field()] | {type, anno(), product, [erl_parse:abstract_type()]},
     seen_type_vars(),
     lint_state()
 ) -> {seen_type_vars(), lint_state()}.
