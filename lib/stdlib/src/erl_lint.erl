@@ -265,6 +265,7 @@ format_error(Error) ->
         {Format, Args} when is_list(Args) ->
             io_lib:format(Format, Args);
         Bin when is_binary(Bin) ->
+            % eqwalizer:ignore - we assume no error here
             unicode:characters_to_list(Bin)
     end.
 
