@@ -874,6 +874,7 @@ record_inits(Fs, Is) ->
 	end, Fs).
 
 -spec record_wildcard_init([erl_parse:af_record_field(T)]) -> T | none.
+% eqwalizer:ignore - `_` is a hack
 record_wildcard_init([{record_field,_,{var,_,'_'},D} | _]) -> D;
 record_wildcard_init([_ | Is]) -> record_wildcard_init(Is);
 record_wildcard_init([]) -> none.
