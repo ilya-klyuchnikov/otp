@@ -651,7 +651,7 @@ format_mf(M, F, ArityString) when is_atom(M), is_atom(F) ->
 format_mna({M, N, A}) when is_integer(A) ->
     atom_to_list(M) ++ ":" ++ atom_to_list(N) ++ gen_type_paren(A).
 
--spec format_where(integer() | {integer(), integer()}) -> string().
+-spec format_where(integer() | {integer(), integer()}) -> io_lib:chars().
 format_where(L) when is_integer(L) ->
     io_lib:format("(line ~p)", [L]);
 format_where({L,C}) when is_integer(L), is_integer(C) ->
