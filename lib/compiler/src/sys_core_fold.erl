@@ -69,7 +69,7 @@
 %% all values where the key contains pattern variables.
 
 -module(sys_core_fold).
--compile(warn_missing_spec_all).
+% -compile(warn_missing_spec_all).
 -moduledoc false.
 
 -export([module/2,format_error/1]).

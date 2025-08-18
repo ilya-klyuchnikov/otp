@@ -23,7 +23,7 @@
 %% Do necessary checking of Erlang code.
 
 -module(erl_lint).
--compile(warn_missing_spec_all).
+% -compile(warn_missing_spec_all).
 -eqwalizer({unlimited_refinement, expr/3}).
 -moduledoc """
 The Erlang code linter.

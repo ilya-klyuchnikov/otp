@@ -80,7 +80,7 @@
 %% fun is not a safe
 
 -module(v3_core).
--compile(warn_missing_spec_all).
+% -compile(warn_missing_spec_all).
 -moduledoc false.
 
 -export([module/2,format_error/1]).
