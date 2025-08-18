@@ -1016,8 +1016,7 @@ processed (see section [Error Information](#module-error-information)).
         {'fun', anno(), {'function', function_name(), arity()}}.
 
 -type af_remote_fun() ::
-        {'fun', anno(), {'function', module(), function_name(), arity()}}
-      | {'fun', anno(), {'function',
+      {'fun', anno(), {'function',
                          af_atom() | af_variable(),
                          af_atom() | af_variable(),
                          af_integer() | af_variable()}}.
