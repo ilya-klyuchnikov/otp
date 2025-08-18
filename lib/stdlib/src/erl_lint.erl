@@ -846,6 +846,7 @@ parse_options([Opt0|Opts], Enabled0) when is_atom(Opt0) ->
             _ ->
                 Enabled0
         end,
+    % eqwalizer:ignore - [] as a hack
     parse_options(Opts, Enabled);
 parse_options([_|Opts], Enabled) ->
     parse_options(Opts, Enabled);
@@ -975,6 +976,7 @@ loc(Anno, St) ->
     Location = erl_anno:location(Anno),
     case erl_anno:file(Anno) of
         undefined -> {St#lint.file,Location};
+        % eqwalizer:ignore file API
         File -> {File,Location}
     end.
 
