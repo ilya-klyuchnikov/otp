@@ -671,6 +671,7 @@ lc_tq(Anno, [{m_generate_strict,AnnoG,P0,G0} | Qs0], St0) ->
 lc_tq(Anno, [{zip,AnnoG,G0} | Qs0], St0) ->
     {G1,St1} = lc_tq(Anno, G0, St0),
     {Qs1,St2} = lc_tq(Anno, Qs0, St1),
+    % eqwalizer:ignore G1 should be [generator()], but it's not expressible via types
     {[{zip,AnnoG,G1}|Qs1],St2};
 lc_tq(Anno, [F0 | Qs0], #exprec{calltype=Calltype,raw_records=Records}=St0) ->
     %% Allow record/2 and expand out as guard test.
