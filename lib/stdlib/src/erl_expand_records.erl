@@ -682,12 +682,15 @@ lc_tq(Anno, [F0 | Qs0], #exprec{calltype=Calltype,raw_records=Records}=St0) ->
 			      _ -> false
 			  end
 		  end,
+    % eqwalizer:ignore - F0 is not qualifier, - all qualifiers are covered
     case erl_lint:is_guard_test(F0, Records, IsOverriden) of
         true ->
+            % eqwalizer:ignore - F0
             {F1,St1} = guard_test(F0, St0),
             {Qs1,St2} = lc_tq(Anno, Qs0, St1),
             {[F1|Qs1],St2};
         false ->
+            % eqwalizer:ignore - F0
             {F1,St1} = expr(F0, St0),
             {Qs1,St2} = lc_tq(Anno, Qs0, St1),
             {[F1 | Qs1],St2}
