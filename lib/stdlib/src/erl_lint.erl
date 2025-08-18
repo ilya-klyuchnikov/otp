@@ -1090,7 +1090,7 @@ form(Form, #lint{state=State}=St) ->
     end.
 
 -spec start_state(
-    erl_parse:abstract_form() | erl_parse:form_info(),
+    erl_parse:abstract_form() | {eof, erl_anno:location()},
     lint_state()
 ) -> lint_state().
 start_state({attribute,Anno,module,{_,_}}=Form, St0) ->
