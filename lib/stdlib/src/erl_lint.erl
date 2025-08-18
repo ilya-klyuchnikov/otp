@@ -4572,6 +4572,7 @@ handle_comprehension(E, Qs, Vt0, St0) ->
 comprehension_expr({map_field_assoc,_,K,V}, Vt0, St0) ->
     expr_list([K,V], Vt0, St0);
 comprehension_expr(E, Vt, St) ->
+    % eqwalizer:fixme - bad occurrence typing with large recursive types?
     expr(E, Vt, St).
 
 %% lc_quals(Qualifiers, ImportVarTable, State) ->
