@@ -1,3 +1,4 @@
 #!/bin/bash
 
 ~/code/elp eqwalize erl_lint erl_lint erl_expand_records core_lib v3_core beam_utils erl_bifs erl_internal core_pp
+# cerl sys_core_fold
