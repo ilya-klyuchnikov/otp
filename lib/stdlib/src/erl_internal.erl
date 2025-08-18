@@ -536,15 +536,19 @@ predefined_functions(Forms) ->
     {module,Mod} = lists:keyfind(module, 1, Attrs),
     Callbacks = [Callback || {callback,Callback} <- Attrs],
     OptionalCallbacks = get_optional_callbacks(Attrs),
+    % eqwalizer:ignore - sloppy
     Mpf1 = module_predef_func_beh_info(Callbacks, OptionalCallbacks),
+    % eqwalizer:ignore - sloppy
     Mpf2 = module_predef_funcs_mod_info(Mod),
     Mpf = [erl_parse:new_anno(F) || F <- Mpf1++Mpf2],
     Exp = [{F,A} || {function,_,F,A,_} <- Mpf],
+    % eqwalizer:ignore - sloppy
     [{attribute,0,export,Exp}|Mpf].
 
 -spec get_optional_callbacks([{atom(), term()}]) -> [{atom(), arity()}].
 get_optional_callbacks(Attrs) ->
     L = [O || {optional_callbacks,O} <- Attrs, is_fa_list(O)],
+    % eqwalizer:ignore - sloppy
     lists:append(L).
 
 -spec is_fa_list(term()) -> boolean().
