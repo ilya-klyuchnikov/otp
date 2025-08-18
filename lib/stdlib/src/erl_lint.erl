@@ -4175,6 +4175,7 @@ check_specs([FunType|Left], ETag, Arity, St0) ->
     {FunType1, CTypes} =
 	case FunType of
 	    {type, _, bounded_fun, [FT = {type, _, 'fun', _}, Cs]} ->
+            % eqwalizer:ignore - messy function types in erl_parse API
 		Types0 = [T || {type, _, constraint, [_, T]} <- Cs],
 		{FT, lists:append(Types0)};
 	    {type, _, 'fun', _} = FT -> {FT, []}
