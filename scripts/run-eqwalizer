@@ -1,3 +1,3 @@
 #!/bin/bash
 
-~/code/elp eqwalize erl_lint erl_lint erl_expand_records
+~/code/elp eqwalize erl_lint erl_lint erl_expand_records core_lib
