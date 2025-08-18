@@ -3865,6 +3865,7 @@ check_type_2({type, A, 'fun', [Dom, Range]}, SeenVars, St) ->
 	    {type, _, any} -> St;
 	    _ -> add_error(A, {type_syntax, 'fun'}, St)
 	end,
+    % eqwalizer:ignore - it's messy
     check_type_2({type, nowarn(), product, [Dom, Range]}, SeenVars, St1);
 check_type_2({type, A, range, [From, To]}, SeenVars, St) ->
     St1 =
@@ -3878,10 +3879,12 @@ check_type_2({type, _A, map, any}, SeenVars, St) ->
 check_type_2({type, _A, map, Pairs}, SeenVars, St) ->
     lists:foldl(fun(Pair, {AccSeenVars, AccSt}) ->
                         check_type_2(Pair, AccSeenVars, AccSt)
+        % eqwalizer:ignore - 'any'
 		end, {SeenVars, St}, Pairs);
 check_type_2({type, _A, map_field_assoc, [Dom, Range]}, SeenVars, St) ->
     check_type_2({type, nowarn(), product, [Dom, Range]}, SeenVars, St);
 check_type_2({type, _A, tuple, any}, SeenVars, St) -> {SeenVars, St};
+% eqwalizer:ignore - not - used?
 check_type_2({type, _A, any}, SeenVars, St) -> {SeenVars, St};
 check_type_2({type, A, binary, [Base, Unit]}, SeenVars, St) ->
     St1 =
@@ -3902,6 +3905,7 @@ check_type_2({type, _A, Tag, Args}=_F, SeenVars, St) when Tag =:= product;
                                                           Tag =:= tuple ->
     lists:foldl(fun(T, {AccSeenVars, AccSt}) ->
                         check_type_1(T, AccSeenVars, AccSt)
+                % eqwalizer:ignore - Args - somehow 'any'
                 end, {SeenVars, St}, Args);
 check_type_2({type, _A, union, Args}=_F, SeenVars0, St) ->
     lists:foldl(fun(T, {AccSeenVars0, AccSt}) ->
@@ -3929,6 +3933,7 @@ check_type_2({type, _A, union, Args}=_F, SeenVars0, St) ->
                 end, {SeenVars0, St}, Args);
 check_type_2({type, Anno, TypeName, Args}, SeenVars, St) ->
     #lint{module = Module, types=Types} = St,
+    % eqwalizer:ignore - somehow 'any'
     Arity = length(Args),
     TypePair = {TypeName, Arity},
     Obsolete = (is_warn_enabled(deprecated_type, St)
@@ -3952,6 +3957,7 @@ check_type_2({type, Anno, TypeName, Args}, SeenVars, St) ->
                           St
                   end
           end,
+    % eqwalizer:ignore - it's messy
     check_type_2({type, nowarn(), product, Args}, SeenVars, St1);
 check_type_2({user_type, A, TypeName, Args}, SeenVars, St) ->
     Arity = length(Args),
