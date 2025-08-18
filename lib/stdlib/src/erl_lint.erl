@@ -3100,6 +3100,7 @@ expr({'fun',Anno,Body}, Vt, St) ->
                       false ->
                           %% check function use like for a call
                           As = lists:duplicate(A, undefined), % dummy args
+                          % eqwalizer:ignore - undefined is a hack here
                           check_call(Anno, F, As, Anno, St)
                   end,
             %% do not mark as used as a local function if listed as
