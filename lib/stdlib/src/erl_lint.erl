@@ -158,7 +158,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 
 -type used_type() :: #used_type{}.
 
--type fun_used_vars() :: #{erl_parse:abstract_expr() => {[atom()], fun_used_vars()}}.
+-type fun_used_vars() :: #{[erl_parse:af_clause()] => {[atom()], fun_used_vars()}}.
 
 %% Usage of records, functions, and imports. The variable table, which
 %% is passed on as an argument, holds the usage of variables.
