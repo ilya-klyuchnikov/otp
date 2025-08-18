@@ -45,6 +45,7 @@
 make_values([E]) -> E;
 make_values([H|_]=Es) -> #c_values{anno=cerl:get_ann(H),es=Es};
 make_values([]) -> #c_values{es=[]};
+% eqwalizer:fixme - occurrence typing
 make_values(E) -> E.
 
 %% Test if the variable VarName is used in Expr.
@@ -69,6 +70,7 @@ vu_expr(V, #c_binary{segments=Ss}) ->
     vu_seg_list(V, Ss);
 vu_expr(V, #c_fun{vars=Vs,body=B}) ->
     %% Variables in fun shadow previous variables
+    % eqwalizer:fixme - should be vars :: [cerl:c_var()]
     case vu_var_list(V, Vs) of
 	true -> false;
 	false -> vu_expr(V, B)
@@ -78,6 +80,7 @@ vu_expr(V, #c_let{vars=Vs,arg=Arg,body=B}) ->
 	true -> true;
 	false ->
 	    %% Variables in let shadow previous variables.
+        % eqwalizer:fixme - should be vars :: [cerl:c_var()]
 	    case vu_var_list(V, Vs) of
 		true -> false;
 		false -> vu_expr(V, B)
@@ -102,12 +105,14 @@ vu_expr(V, #c_try{arg=E,vars=Vs,body=B,evars=Evs,handler=H}) ->
 	true -> true;
 	false ->
 	    %% Variables shadow previous ones.
+        % eqwalizer:fixme - should be vars :: [cerl:c_var()]
 	    case case vu_var_list(V, Vs) of
 		     true -> false;
 		     false -> vu_expr(V, B)
 		 end of
 		true -> true;
 		false ->
+            % eqwalizer:fixme - should be evars :: [cerl:c_var()]
 		    case vu_var_list(V, Evs) of
 			true -> false;
 			false -> vu_expr(V, H)
