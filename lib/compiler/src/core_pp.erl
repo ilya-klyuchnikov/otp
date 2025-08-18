@@ -86,6 +86,7 @@ maybe_anno(Node, Fun, #ctxt{clean=true}=Ctxt) ->
 -spec needs_line_anno(cerl:cerl()) -> boolean().
 needs_line_anno(Node) ->
     case (cerl:is_c_primop(Node) andalso
+          % eqwalizer:fixme - it should be c_literal in specs!
           cerl:concrete(cerl:primop_name(Node))) of
         debug_line -> true;
         executable_line -> true;
@@ -569,6 +570,7 @@ width([H|T], A, Ctxt, C) when is_list(H) ->
 width([_|T], A, Ctxt, C) ->
     width(T, A + 1, Ctxt, C);
 width([], A, Ctxt, [H|T]) ->
+    % eqwalizer:ignore - sloppy
     width(H, A, Ctxt, T);
 width([], A, _, []) -> A.
 
