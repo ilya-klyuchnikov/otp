@@ -1859,7 +1859,7 @@ nowarn_function(Tag, Opts) ->
                              Tag1 =:= Tag,
                              FA <- lists:flatten([FAs])]).
 
--spec func_location_warning(atom(), [{{fa(), module()}, anno()}], lint_state()) -> lint_state().
+-spec func_location_warning(atom(), [{{fa(), module()} | fa(), anno()}], lint_state()) -> lint_state().
 func_location_warning(Type, Fs, St) ->
     foldl(fun ({F,Anno}, St0) -> add_warning(Anno, {Type,F}, St0) end, St, Fs).
 
