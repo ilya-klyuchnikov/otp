@@ -4709,7 +4709,7 @@ handle_generator(P,E,Vt,Uvt,St0) ->
     var_table(),
     lint_state()
 ) -> {var_table(), var_table(), lint_state()}.
-comprehension_pattern([_|_]=Ps, Vt, St) ->
+comprehension_pattern(Ps, Vt, St) when is_list(Ps) ->
     Mps = [K || {map_field_exact,_,K,_} <- Ps] ++ [V || {map_field_exact,_,_,V} <- Ps],
     Ps1 = [P || P <- Ps, element(1,P)=/=map_field_exact],
     % eqwalizer:ignore - {map_field_exact, ...} are filtered out
