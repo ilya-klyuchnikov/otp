@@ -594,6 +594,7 @@ strict_record_access(E0, St0) ->
                            end, {[],CheckedRA}, StrictRA),
     E1 = if New =:= [] -> E0; true -> conj(New, E0) end,
     St1 = St0#exprec{strict_ra = [], checked_ra = NC},
+    % eqwalizer:ignore E1 should not be 'empty'
     expr(E1, St1).
 
 %% Make it look nice (?) when compiled with the 'E' flag
