@@ -108,9 +108,9 @@ Serves as the identifier or "name" of an edge. This is distinct from an edge
 "label" which attaches ancillary information to the edge rather than identifying
 the edge itself.
 """.
--type edge()    :: term().
--type label()   :: term().
--type vertex()  :: term().
+-type edge()    :: dynamic().
+-type label()   :: dynamic().
+-type vertex()  :: dynamic().
 
 -doc """
 The error reason for when an edge could not be added to a graph.
