@@ -1094,6 +1094,7 @@ new_var_name(St) ->
 
 -spec make_list([erl_parse:af_field_name()], erl_anno:anno()) -> erl_parse:abstract_expr().
 make_list(Ts, Anno) ->
+    % eqwalizer:ignore - explicit type is needed
     foldr(fun (H, T) -> {cons,Anno,H,T} end, {nil,Anno}, Ts).
 
 -spec call_error(erl_anno:anno(), erl_parse:abstract_expr()) -> erl_parse:abstract_expr().
@@ -1222,6 +1223,7 @@ opt_pattern(P, Rs) -> {P,Rs}.
 -spec opt_var(erl_parse:af_variable(), atom(), integer()) -> erl_parse:af_match(erl_parse:af_pattern()).
 opt_var({var,Anno,_}=Var, Tag, Sz) ->
     Rp = record_pattern(2, -1, ignore, Sz, Anno, [{atom,Anno,Tag}]),
+    % eqwalizer:ignore - 'ignore' is a hack
     {match,Anno,{tuple,Anno,Rp},Var}.
 
 -spec opt_remove(erl_parse:af_guard_seq(), dict()) -> erl_parse:af_guard_seq().
