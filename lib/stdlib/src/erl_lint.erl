@@ -2442,6 +2442,7 @@ pattern_element_1({bin_element,Anno,E,Sz0,Ts}, Vt, Old,
               all -> add_error(PrevAnno, unsized_binary_not_at_end, St4);
               _ -> St4
           end,
+    % eqwalizer:ignore - just ignore
     {{Sz4,Anno},vtmerge(Szvt,vtmerge(Pevt, Esvt)),
      vtmerge(Sznew,vtmerge(Esnew, Penew)), St5}.
 
@@ -2514,6 +2515,7 @@ pat_bit_size(Size, Vt0, New0, St0) ->
                          add_warning(Anno, non_integer_bitsize, St3);
                      false -> St3
                  end,
+            % eqwalizer:ignore New - should not be none
             {unknown,Vt,New,St}
     end.
 
