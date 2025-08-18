@@ -3519,7 +3519,7 @@ used_record(Name, #lint{usage=Usage}=St) ->
 %%      {UpdVarTable,State}.
 
 -spec check_fields(
-    [erl_parse:af_record_field(erl_parse:abstract_expr())],
+    [erl_parse:af_record_field(_)],
     erl_parse:record_name(),
     [erl_parse:af_field_decl()],
     var_table(),
@@ -3537,7 +3537,7 @@ check_fields(Fs, Name, Fields, Vt0, St0, CheckFun) ->
     {Uvt,St1}.
 
 -spec check_field(
-    erl_parse:af_record_field(erl_parse:abstract_expr()) | dynamic(),
+    erl_parse:af_record_field(_) | dynamic(),
     erl_parse:record_name(),
     [erl_parse:af_field_decl()],
     var_table(),
@@ -3669,7 +3669,7 @@ init_fields(Ifs, Anno, Name, Dfs, Vt0, St0) ->
     {Vt1,St1#lint{usage = St2#lint.usage}}.
 
 -spec ginit_fields(
-    [erl_parse:af_record_field(erl_parse:af_guard_test())],
+    [erl_parse:af_record_field(_)],
     anno(),
     erl_parse:record_name(),
     [erl_parse:af_field_decl()],
@@ -3712,7 +3712,7 @@ update_fields(Ufs, Name, Dfs, Vt, St) ->
 %% exist_field(FieldName, [Field]) -> boolean().
 %%  Find a record field in a field list.
 
--spec exist_field(atom(), [erl_parse:af_record_field(_)]) -> boolean().
+-spec exist_field(atom(), [erl_parse:af_record_field(_) | dynamic()]) -> boolean().
 exist_field(F, [{record_field,_Af,{atom,_Aa,F},_Val}|_Fs]) -> true;
 exist_field(F, [_|Fs]) -> exist_field(F, Fs);
 exist_field(_F, []) -> false.
