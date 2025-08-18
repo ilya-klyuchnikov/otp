@@ -3832,13 +3832,16 @@ check_type_2({ann_type, _A, [_Var, Type]}, SeenVars, St) ->
 check_type_2({remote_type, A, [{atom, _, Mod}, {atom, _, Name}, Args]},
 	   SeenVars, St00) ->
     St0 = check_module_name(Mod, A, St00),
+    % eqwalizer:ignore - sloppy types
     St = deprecated_type(A, Mod, Name, Args, St0),
     CurrentMod = St#lint.module,
     case Mod =:= CurrentMod of
+    % eqwalizer:ignore - sloppy types
 	true -> check_type_2({user_type, A, Name, Args}, SeenVars, St);
 	false ->
 	    lists:foldl(fun(T, {AccSeenVars, AccSt}) ->
 				check_type_1(T, AccSeenVars, AccSt)
+            % eqwalizer:ignore - sloppy types
 			end, {SeenVars, St}, Args)
     end;
 check_type_2({integer, _A, _}, SeenVars, St) -> {SeenVars, St};
