@@ -1744,6 +1744,7 @@ reached_functions([], [], _Ref, Reached) -> gb_sets:to_list(Reached).
 check_undefined_functions(#lint{called=Called0,defined=Def0}=St0) ->
     Called = sofs:relation(Called0, [{func,location}]),
     Def = sofs:from_external(gb_sets:to_list(Def0), [func]),
+    % eqwalizer:ignore - sofs - bad API
     Undef = sofs:to_external(sofs:drestriction(Called, Def)),
     FAList = sofs:to_external(Def),
     func_location_error(undefined_function, Undef, St0, FAList).
