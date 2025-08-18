@@ -3681,7 +3681,7 @@ ginit_fields(Ifs, Anno, Name, Dfs, Vt0, St0) ->
 
 %% Default initializations to be carried out
 -spec init_fields(
-    [erl_parse:af_record_field(erl_parse:af_guard_test())],
+    [erl_parse:af_record_field(_)],
     anno(),
     [erl_parse:af_field_decl()]
 ) -> [erl_parse:af_record_field(erl_parse:abstract_expr())].
