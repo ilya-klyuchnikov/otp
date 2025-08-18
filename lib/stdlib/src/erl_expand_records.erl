@@ -31,6 +31,7 @@ This module expands records in a module.
 Section [The Abstract Format](`e:erts:absform.md`) in ERTS User's Guide.
 """.
 -compile(warn_missing_spec_all).
+-eqwalizer({unlimited_refinement, expr/2}).
 -export([module/2]).
 
 -import(lists, [map/2,foldl/3,foldr/3,sort/1,reverse/1,duplicate/2]).
