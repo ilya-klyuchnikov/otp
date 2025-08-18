@@ -209,8 +209,8 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 						%outside any fun or lc
                xqlc= false :: boolean(),	%true if qlc.hrl included
                called= [] :: [{fa(),anno()}],   %Called functions
-               fun_used_vars = undefined        %Funs used vars
-                   :: fun_used_vars() | undefined,
+               fun_used_vars = #{}        %Funs used vars
+                   :: fun_used_vars(),
                usage = #usage{}		:: #usage{},
                specs = maps:new()               %Type specifications
                    :: #{mfa() => anno()},
