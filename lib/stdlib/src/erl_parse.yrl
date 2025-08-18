@@ -824,6 +824,7 @@ processed (see section [Error Information](#module-error-information)).
     af_record_field/1,
     af_record_field_type/0,
     af_variable/0,
+    af_typed_field/0,
     af_wild_attribute/0,
     behaviour/0,
     function_name/0,
