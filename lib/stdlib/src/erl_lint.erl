@@ -3012,7 +3012,7 @@ exprs([], _Vt, St) -> {[],St}.
 %%  mark illegally exported variables, e.g. from catch, as unsafe to better
 %%  show why unbound.
 
--spec expr(erl_parse:abstract_expr(), var_table(), lint_state()) -> {var_table(), lint_state()}.
+-spec expr(erl_parse:abstract_expr() | erl_parse:af_remote_function(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 expr({var,Anno,V}, Vt, St) ->
     expr_var(V, Anno, Vt, St);
 expr({char,_Anno,_C}, _Vt, St) -> {[],St};
