@@ -484,6 +484,7 @@ successors(L, Blocks) ->
 
 def(Ls, Blocks) when is_map(Blocks) ->
     Blks = [map_get(L, Blocks) || L <- Ls],
+    % eqwalizer:ignore - ignore 'none' hack
     def_1(Blks, []).
 
 -spec def_unused(Ls, Used, Blocks) -> {Def,Unused} when
@@ -496,6 +497,7 @@ def(Ls, Blocks) when is_map(Blocks) ->
 def_unused(Ls, Unused, Blocks) when is_map(Blocks) ->
     Blks = [map_get(L, Blocks) || L <- Ls],
     Preds = sets:from_list(Ls),
+    % eqwalizer:ignore - ignore 'none' hack
     def_unused_1(Blks, Preds, [], Unused).
 
 %% dominators(Labels, BlockMap) -> {Dominators,Numbering}.
@@ -791,6 +793,7 @@ used(_) -> [].
 
 -spec definitions(Labels :: [label()], Blocks :: block_map()) -> definition_map().
 definitions(Labels, Blocks) ->
+    % eqwalizer:ignore - none hack
     fold_instrs(fun(#b_set{ dst = Var }=I, Acc) ->
                             Acc#{Var => I};
                        (_Terminator, Acc) ->
@@ -1033,6 +1036,7 @@ fix_phis([], _) -> [].
 fix_phis_1([#b_set{op=phi,args=Args0}=I|Is], L, S) ->
     Args = [{Val,Pred} || {Val,Pred} <:- Args0,
                           is_successor(L, Pred, S)],
+    % eqwalizer:ignore - some invariant when op=phi
     [I#b_set{args=Args}|fix_phis_1(Is, L, S)];
 fix_phis_1(Is, _, _) -> Is.
 
@@ -1218,6 +1222,7 @@ split_blocks_after_is([], _, _) -> no.
 
 -spec update_phi_labels_is([b_set()], label(), label()) -> [b_set()].
 update_phi_labels_is([#b_set{op=phi,args=Args0}=I0|Is], Old, New) ->
+    % eqwalizer:ignore - some invariant when op=phi?
     Args = [{Arg,rename_label(Lbl, Old, New)} || {Arg,Lbl} <:- Args0],
     I = I0#b_set{args=Args},
     [I|update_phi_labels_is(Is, Old, New)];
