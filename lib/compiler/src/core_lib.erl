@@ -22,7 +22,7 @@
 %% Purpose: Core Erlang abstract syntax functions.
 
 -module(core_lib).
--compile(warn_missing_spec_all).
+% -compile(warn_missing_spec_all).
 -moduledoc false.
 
 -export([make_values/1]).

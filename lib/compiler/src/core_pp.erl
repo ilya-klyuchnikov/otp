@@ -22,7 +22,7 @@
 %% Purpose : Core Erlang (naive) prettyprinter
 
 -module(core_pp).
--compile(warn_missing_spec_all).
+% -compile(warn_missing_spec_all).
 -moduledoc false.
 
 -export([format/1,format_all/1]).
