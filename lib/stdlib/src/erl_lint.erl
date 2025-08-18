@@ -2682,7 +2682,7 @@ guard_test2(G, Vt, St) ->
     gexpr(G, Vt, St).
 
 %%  Check a guard expression, returns NewVariables.
--spec gexpr(erl_parse:af_guard_test(), var_table(), lint_state()) -> {var_table(), lint_state()}.
+-spec gexpr(erl_parse:abstract_expr(), var_table(), lint_state()) -> {var_table(), lint_state()}.
 gexpr({var,Anno,V}, Vt, St) ->
     expr_var(V, Anno, Vt, St);
 gexpr({char,_Anno,_C}, _Vt, St) -> {[],St};
@@ -2795,7 +2795,7 @@ gexpr(E, _Vt, St) ->
 %% gexpr_list(Expressions, VarTable, State) ->
 %%      {UsedVarTable,State'}
 
--spec gexpr_list([erl_parse:af_guard_test()], var_table(), lint_state()) -> {var_table(), lint_state()}.
+-spec gexpr_list([erl_parse:abstract_expr()], var_table(), lint_state()) -> {var_table(), lint_state()}.
 gexpr_list(Es, Vt, St) ->
     foldl(fun (E, {Esvt,St0}) ->
                   {Evt,St1} = gexpr(E, Vt, St0),
