@@ -910,6 +910,7 @@ processed (see section [Error Information](#module-error-information)).
                        | af_compile()
                        | af_file()
                        | af_record_decl()
+                       | af_struct_decl()
                        | af_type_decl()
                        | af_function_spec()
                        | af_wild_attribute()
@@ -948,6 +949,13 @@ processed (see section [Error Information](#module-error-information)).
 
 -type af_field() :: {'record_field', anno(), af_field_name()}
                   | {'record_field', anno(), af_field_name(), abstract_expr()}.
+
+-type af_struct_decl() ::
+        {'attribute', anno(), 'struct', {StructName :: atom(), [af_struct_field_decl()]}}.
+
+-type af_struct_field_decl() ::
+        {'struct_def_field', anno(), FieldName :: atom()}
+        | {'struct_def_field', anno(), FieldName :: atom(), Value :: abstract_expr()}.
 
 -type af_type_decl() :: {'attribute', anno(), type_attr(),
                          {type_name(), abstract_type(), [af_variable()]}}.
