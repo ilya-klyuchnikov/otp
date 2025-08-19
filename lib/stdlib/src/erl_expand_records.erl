@@ -30,7 +30,7 @@ This module expands records in a module.
 
 Section [The Abstract Format](`e:erts:absform.md`) in ERTS User's Guide.
 """.
-% -compile(warn_missing_spec_all).
+-compile(warn_missing_spec_all).
 -eqwalizer({unlimited_refinement, expr/2}).
 -export([module/2]).
 
@@ -40,7 +40,7 @@ Section [The Abstract Format](`e:erts:absform.md`) in ERTS User's Guide.
                  % Call types
                  calltype=#{} :: calltype_map(),
                  % Struct types
-                 structype=#{},
+                 structype=#{} :: structtype_map(),
                  % Record definitions
                  records=#{} :: #{erl_parse:record_name() => [erl_parse:af_field_decl()]},
                  % Raw record forms
@@ -52,8 +52,10 @@ Section [The Abstract Format](`e:erts:absform.md`) in ERTS User's Guide.
                  % Compiler option 'dialyzer'
                  dialyzer=false :: boolean(),
                  strict_rec_tests=true :: boolean(),
-                 strict_sa=[],         % strict struct access
-                 checked_sa=[],         % Successfully accessed structs
+                 % Strict struct accesses
+                 strict_sa=[] :: [struct_access()],
+                 % Successfully accessed structs
+                 checked_sa=[] :: [struct_access()],
                  module=''
                 }).
 
@@ -63,8 +65,15 @@ Section [The Abstract Format](`e:erts:absform.md`) in ERTS User's Guide.
     erl_parse:abstract_expr(),
     integer()
 }.
+-type struct_access() :: {
+    {{module(), atom()}, erl_parse:abstract_expr()},
+    erl_anno:anno(),
+    erl_parse:abstract_expr()
+}.
 -type calltype() :: local | {imported, module()}.
 -type calltype_map() :: #{{atom(), arity()} => calltype()}.
+-type structtype() :: local | {imported, module()}.
+-type structtype_map() :: #{atom() => structtype()}.
 
 -doc """
 Expands all records in a module to use explicit tuple operations and adds
@@ -109,10 +118,12 @@ init_calltype_imports([_|T], Ctype) ->
     init_calltype_imports(T, Ctype);
 init_calltype_imports([], Ctype) -> Ctype.
 
+-spec init_structtype([erl_parse:abstract_form()]) -> structtype_map().
 init_structtype(Forms) ->
     Stype = #{ Name => local || {attribute, _, struct, {Name,_}} <- Forms },
     init_structtype_imports(Forms, Stype).
 
+-spec init_structtype_imports([erl_parse:abstract_form()], structtype_map()) -> structtype_map().
 init_structtype_imports([{attribute,_,import_struct,{Mod,Ss}}|T], Stype0) ->
     true = is_atom(Mod),
     Stype = foldl(fun(S, Acc) -> Acc#{S => {imported, Mod}} end, Stype0, Ss),
@@ -158,7 +169,9 @@ head(As, St) -> pattern_list(As, St).
     (erl_parse:af_pattern(), #exprec{}) ->
         {erl_parse:af_pattern(), #exprec{}};
     (erl_parse:af_assoc_exact(erl_parse:af_pattern()), #exprec{}) ->
-        {erl_parse:af_assoc_exact(erl_parse:af_pattern()), #exprec{}}.
+        {erl_parse:af_assoc_exact(erl_parse:af_pattern()), #exprec{}};
+    (erl_parse:af_struct_field(erl_parse:af_pattern()), #exprec{}) ->
+        {erl_parse:af_struct_field(erl_parse:af_pattern()), #exprec{}}.
 pattern({var,_,'_'}=Var, St) ->
     {Var,St};
 pattern({var,_,_}=Var, St) ->
@@ -227,10 +240,12 @@ pattern({op,Anno,Op,L0,R0}, St0) ->
     {R,St2} = pattern(R0, St1),
     {{op,Anno,Op,L,R},St2}.
 
+% erl_parse:af_struct_field(erl_parse:af_pattern())
 -spec pattern_list
     ([], #exprec{}) -> {[], #exprec{}};
     ([erl_parse:af_pattern(), ...], #exprec{}) -> {[erl_parse:af_pattern(), ...], #exprec{}};
-    ([erl_parse:af_assoc_exact(erl_parse:af_pattern()), ...], #exprec{}) -> {[erl_parse:af_assoc_exact(erl_parse:af_pattern()), ...], #exprec{}}.
+    ([erl_parse:af_assoc_exact(erl_parse:af_pattern()), ...], #exprec{}) -> {[erl_parse:af_assoc_exact(erl_parse:af_pattern()), ...], #exprec{}};
+    ([erl_parse:af_struct_field(erl_parse:af_pattern()), ...], #exprec{}) -> {[erl_parse:af_struct_field(erl_parse:af_pattern()), ...], #exprec{}}.
 pattern_list([P0 | Ps0], St0) ->
     {P,St1} = pattern(P0, St0),
     {Ps,St2} = pattern_list(Ps0, St1),
@@ -686,6 +701,7 @@ strict_record_access(E0, St0) ->
                                        false -> {[A|L],[A|C]}
                                    end
                              end, {[],CheckedSA}, StrictSA),
+    % eqwalizer:ignore E1 should not be 'empty'
     E2 = if NewS =:= [] -> E1; true -> conj_struct(NewS, E1) end,
     St1 = St0#exprec{strict_ra = [], checked_ra = NRC, strict_sa = [], checked_sa = NSC},
     % eqwalizer:ignore E1 should not be 'empty'
@@ -724,6 +740,7 @@ conj([{{Name,_Rp},Anno,R,Sz} | AL], E) ->
 	    {op,NAnno,'and',T2,E}
     end.
 
+-spec conj_struct([struct_access()], erl_parse:abstract_expr() | none) -> erl_parse:abstract_expr() | empty.
 conj_struct([], _E) ->
     empty;
 conj_struct([{{{Module,Name},_Rp},Anno,R} | AL], E) ->
@@ -733,7 +750,7 @@ conj_struct([{{{Module,Name},_Rp},Anno,R} | AL], E) ->
             {remote,NAnno,{atom,NAnno,erlang},{atom,NAnno,is_tagged_struct}},
             [R,{atom,NAnno,Module},{atom,NAnno,Name}]},
         {atom,NAnno,fail}},
-    T2 = case conj(AL, none) of
+    T2 = case conj_struct(AL, none) of
              empty -> T1;
              C -> {op,NAnno,'and',C,T1}
          end,
@@ -1151,6 +1168,13 @@ record_exprs([{record_field,Anno,{atom,_AnnoA,_F}=Name,Val}=Field0 | Us], St0, P
 record_exprs([], St, Pre, Fs) ->
     {reverse(Pre),Fs,St}.
 
+-spec get_struct_field(
+    erl_anno:anno(),
+    erl_parse:abstract_expr(),
+    atom(),
+    {atom(), atom()} | {},
+    #exprec{}
+) -> {erl_parse:abstract_expr(), #exprec{}}.
 get_struct_field(Anno, Str, F, Id, St0) ->
     case is_in_guard() of
         false ->
@@ -1180,6 +1204,13 @@ get_struct_field(Anno, Str, F, Id, St0) ->
                 {remote,Anno,{atom,Anno,erlang},{atom,Anno,struct_get}}, [{atom, Anno, F},ExpS]},St2}
     end.
 
+-spec update_struct_fields(
+    erl_anno:anno(),
+    erl_parse:abstract_expr(),
+    {atom(), atom()} | {},
+    [erl_parse:af_struct_field(erl_parse:abstract_expr())],
+    #exprec{}
+) -> {erl_parse:abstract_expr(), #exprec{}}.
 update_struct_fields(Anno, Str, Id, Us, St0) ->
     {Var,St1} = new_var(Anno, St0),
     NAnno = no_compiler_warning(Anno),
@@ -1193,6 +1224,12 @@ update_struct_fields(Anno, Str, Id, Us, St0) ->
                     [{tuple,NAnno,[{atom,NAnno,badstruct},Var]}]}]}]},
     expr(E, St2).
 
+-spec struct_init_update(
+    erl_parse:abstract_expr(),
+    erl_anno:anno(),
+    [erl_parse:af_struct_field(erl_parse:abstract_expr())],
+    #exprec{}
+) -> {erl_parse:abstract_expr(), #exprec{}}.
 struct_init_update(Str, Anno, Us0, St0) ->
     {Pre,Us,St1} = struct_exprs(Us0, St0),
     {Var,St2} = new_var(Anno, St1),
@@ -1203,6 +1240,12 @@ struct_init_update(Str, Anno, Us0, St0) ->
             Us),
     {{block,Anno,Pre ++ [{match,Anno,Var,Str},Update]},St2}.
 
+-spec struct_update_update(
+    erl_parse:af_variable(),
+    erl_anno:anno(),
+    [erl_parse:af_struct_field(erl_parse:abstract_expr())],
+    #exprec{}
+) -> {[erl_parse:abstract_expr()], #exprec{}}.
 struct_update_update(Var, A, Us0, St0) ->
     {Pre,Us,St1} = struct_exprs(Us0, St0),
     Update =
@@ -1212,9 +1255,18 @@ struct_update_update(Var, A, Us0, St0) ->
             Us),
     {Pre ++ [Update],St1}.
 
+-spec struct_exprs(
+    [erl_parse:af_struct_field(erl_parse:abstract_expr())], #exprec{}
+) -> {[erl_parse:abstract_expr()], [erl_parse:af_struct_field(erl_parse:abstract_expr())], #exprec{}}.
 struct_exprs(Us, St) ->
     struct_exprs(Us, St, [], []).
 
+-spec struct_exprs(
+    [erl_parse:af_struct_field(erl_parse:abstract_expr())],
+    #exprec{},
+    [erl_parse:abstract_expr()],
+    [erl_parse:af_struct_field(erl_parse:abstract_expr())]
+) -> {[erl_parse:abstract_expr()], [erl_parse:af_struct_field(erl_parse:abstract_expr())], #exprec{}}.
 struct_exprs([{struct_field,Anno,Name,Val}=Field0 | Us], St0, Pre, Fs) ->
     case is_simple_val(Val) of
         true ->
