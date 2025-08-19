@@ -23,7 +23,7 @@
 %% Do necessary checking of Erlang code.
 
 -module(erl_lint).
-% -compile(warn_missing_spec_all).
+-compile(warn_missing_spec_all).
 -eqwalizer({unlimited_refinement, expr/3}).
 -moduledoc """
 The Erlang code linter.
@@ -187,7 +187,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                    :: #{atom() => {anno(),Fields :: [erl_parse:af_field_decl()]}},
                struct_imports=[] :: orddict:orddict(atom(), module()),
                structs=maps:new()
-                   :: #{atom() => {anno(),Fields :: term()}},
+                   :: #{atom() => {anno(),Fields :: [erl_parse:af_struct_field_decl()]}},
                locals=gb_sets:empty()     %All defined functions (prescanned)
                    :: gb_sets:set(fa()),
                no_auto={set, gb_sets:empty()} %Functions explicitly not autoimported
@@ -2116,6 +2116,7 @@ check_imports(_Anno, Fs, Is) ->
 add_imports(Mod, Fs, Is) ->
     foldl(fun (F, Is0) -> orddict:store(F, Mod, Is0) end, Is, Fs).
 
+-spec import_struct(anno(), {module(), [atom()]}, lint_state()) -> lint_state().
 import_struct(Anno, {Mod, Ss}, St00) ->
   St = check_module_name(Mod, Anno, St00),
   Mss = ordsets:from_list(Ss),
@@ -2126,6 +2127,12 @@ import_struct(Anno, {Mod, Ss}, St00) ->
       foldl(fun(E, St0) -> add_error(Anno, {redefine_struct_import, E}, St0) end, St, Es)
   end.
 
+-spec check_struct_imports(
+    anno(),
+    ordsets:ordset(atom()),
+    orddict:orddict(atom(), atom()),
+    gb_sets:set(atom())
+) -> [atom() | {atom(), atom()}].
 check_struct_imports(_Anno, Ss, Is, Locals) ->
   foldl(fun (S, Efs) ->
     case gb_sets:is_element(S, Locals) of
@@ -2138,6 +2145,7 @@ check_struct_imports(_Anno, Ss, Is, Locals) ->
         end
         end, [], Ss).
 
+-spec add_struct_imports(module(), ordsets:ordset(atom()), orddict:orddict(atom(), atom())) -> orddict:orddict(atom(), atom()).
 add_struct_imports(Mod, Ss, Is) ->
   foldl(fun (S, Is0) -> orddict:store(S, Mod, Is0) end, Is, Ss).
 
@@ -3552,6 +3560,7 @@ record_def(Anno, Name, Fs0, St0) ->
             check_type({type, nowarn(), product, Types}, St3)
     end.
 
+-spec struct_def(anno(), atom(), [erl_parse:af_struct_field_decl()], lint_state()) -> lint_state().
 struct_def(Anno, Name, Fs0, St0) ->
   case is_map_key(Name, St0#lint.structs) of
     true -> add_error(Anno, {redefine_struct,Name}, St0);
@@ -3594,6 +3603,11 @@ def_fields(Fs0, Name, St0) ->
                   end
           end, {[],St0}, Fs0).
 
+-spec struct_def_fields(
+    [erl_parse:af_struct_field_decl()],
+    atom(),
+    lint_state()
+) -> {[erl_parse:af_struct_field_decl()], lint_state()}.
 struct_def_fields(Fs0, Name, St0) ->
    foldl(fun
            ({struct_def_field, Af, {atom, _Aa, F}}=Field, {Fs, St}) ->
@@ -3661,6 +3675,7 @@ check_record(Anno, Name, St, CheckFun) ->
             end
     end.
 
+-spec call_struct(anno(), atom(), lint_state()) -> lint_state().
 call_struct(Anno, Name, St) ->
   case maps:find(Name, St#lint.structs) of
     {ok, _} -> St;
@@ -3880,11 +3895,13 @@ exist_field(F, [{record_field,_Af,{atom,_Aa,F},_Val}|_Fs]) -> true;
 exist_field(F, [_|Fs]) -> exist_field(F, Fs);
 exist_field(_F, []) -> false.
 
+-spec exist_struct_field(atom(), [erl_parse:af_struct_field_decl()]) -> boolean().
 exist_struct_field(F, [{struct_def_field,_Af,{atom,_Aa,F},_Val}|_Fs]) -> true;
 exist_struct_field(F, [{struct_def_field,_Af,{atom,_Aa,F}}|_Fs]) -> true;
 exist_struct_field(F, [_|Fs]) -> exist_struct_field(F, Fs);
 exist_struct_field(_F, []) -> false.
 
+-spec not_inited_struct_fields([erl_parse:af_struct_field_decl()]) -> [atom()].
 not_inited_struct_fields([{struct_def_field,_Af,{atom,_Aa,F}}|Fs]) ->
   [F | not_inited_struct_fields(Fs)];
 not_inited_struct_fields([_|Fs]) ->
@@ -3900,6 +3917,12 @@ find_field(F, [{record_field,_Af,{atom,_Aa,F},Val}|_Fs]) -> {ok,Val};
 find_field(F, [_|Fs]) -> find_field(F, Fs);
 find_field(_F, []) -> error.
 
+-spec pattern_struct_fields(
+    [erl_parse:af_struct_field(erl_parse:af_pattern())],
+    var_table(),
+    var_table(),
+    lint_state()
+) -> {var_table(), var_table(), lint_state()}.
 pattern_struct_fields(Fs, Vt0, Old, St0) ->
   CheckFun = fun (Val, Vt, St) -> pattern(Val, Vt, Old, St) end,
   {_SeenFields,Uvt,Unew,St1} =
@@ -3919,6 +3942,11 @@ pattern_struct_fields(Fs, Vt0, Old, St0) ->
 %% check that there are no duplicate fields
 %% in struct usages.
 %% We don't have a definition of the struct here.
+-spec check_struct_fields(
+    [erl_parse:af_struct_field(erl_parse:abstract_expr())],
+    var_table(),
+    lint_state()
+) -> {var_table(), lint_state()}.
 check_struct_fields(Fs, Vt0, St0) ->
   CheckFun = fun expr/3,
   {_SeenFields,Uvt,St1} =
@@ -3932,6 +3960,13 @@ check_struct_fields(Fs, Vt0, St0) ->
       Fs),
   {Uvt,St1}.
 
+-spec check_struct_field(
+    erl_parse:af_struct_field(erl_parse:abstract_expr()),
+    var_table(),
+    lint_state(),
+    [atom()],
+    fun((dynamic(), var_table(), lint_state()) -> {var_table(), lint_state()})
+) -> {[atom()], {var_table(), lint_state()}}.
 check_struct_field({struct_field, Af, F, Val}, Vt, St, Sfs, CheckFun) ->
   case member(F, Sfs) of
     true -> {Sfs, {[], add_error(Af, {redefine_struct_field, F}, St)}};
@@ -3940,6 +3975,11 @@ check_struct_field({struct_field, Af, F, Val}, Vt, St, Sfs, CheckFun) ->
 
 %% check struct fields against
 %% the struct definition. Issues warnings.
+-spec check_struct_fields_usage(
+    atom(),
+    [erl_parse:af_struct_field(erl_parse:abstract_expr())],
+    lint_state()
+) -> lint_state().
 check_struct_fields_usage(SName, Fs, St0) ->
   case maps:find(SName, St0#lint.structs) of
     error ->
@@ -3957,6 +3997,12 @@ check_struct_fields_usage(SName, Fs, St0) ->
       )
   end.
 
+-spec check_struct_fields_init(
+    atom(),
+    [erl_parse:af_struct_field(erl_parse:abstract_expr())],
+    lint_state(),
+    anno()
+) -> lint_state().
 check_struct_fields_init(SName, Inits, St0, Anno) ->
   case maps:find(SName, St0#lint.structs) of
     error ->
@@ -3977,6 +4023,7 @@ check_struct_fields_init(SName, Inits, St0, Anno) ->
   end.
 
 
+-spec check_struct_field_expr_usage(erl_parse:af_struct_field_access(), lint_state()) -> lint_state().
 check_struct_field_expr_usage({struct_field_expr, Anno, _Str, SName, FName}, St) ->
   case maps:find(SName, St#lint.structs) of
     error ->
@@ -5960,6 +6007,9 @@ control_type(_C, _Need) -> error.
 ) -> gb_sets:set(fa()).
 local_functions(Forms) ->
     gb_sets:from_list([ {Func,Arity} || {function,_,Func,Arity,_} <- Forms ]).
+-spec local_structs(
+    [erl_parse:abstract_form() | erl_parse:form_info()]
+) -> gb_sets:set(atom()).
 local_structs(Forms) ->
   gb_sets:from_list([ Name || {attribute, _, struct, {Name,_StrTuple}} <- Forms ]).
 %% Predicate to find out if the function is locally defined
