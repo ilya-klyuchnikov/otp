@@ -983,6 +983,9 @@ processed (see section [Error Information](#module-error-information)).
                        | af_record_update(abstract_expr())
                        | af_record_index()
                        | af_record_field_access(abstract_expr())
+                       | af_struct_creation()
+                       | af_struct_update()
+                       | af_struct_field_access()
                        | af_map_creation(abstract_expr())
                        | af_map_update(abstract_expr())
                        | af_catch()
@@ -1143,6 +1146,7 @@ processed (see section [Error Information](#module-error-information)).
                     | af_unary_op(af_pattern())
                     | af_record_creation(af_pattern())
                     | af_record_index()
+                    | af_struct_pattern()
                     | af_map_pattern().
 
 -type af_record_index() ::
@@ -1152,6 +1156,20 @@ processed (see section [Error Information](#module-error-information)).
         {'record', anno(), record_name(), [af_record_field(T)]}.
 
 -type af_record_field(T) :: {'record_field', anno(), af_field_name(), T}.
+
+-type af_struct_creation() ::
+        {'struct', anno(), atom() | {atom(), atom()} | {}, [af_struct_field(abstract_expr())]}.
+
+-type af_struct_update() ::
+        {'struct_update', anno(), abstract_expr(), atom() | {atom(), atom()} | {}, [af_struct_field(abstract_expr())]}.
+
+-type af_struct_field_access() ::
+        {'struct_field_expr', anno(), abstract_expr(), atom() | {atom(), atom()} | {}, atom()}.
+
+-type af_struct_pattern() ::
+        {'struct', anno(), atom() | {atom(), atom()} | {}, [af_struct_field(af_pattern())]}.
+
+-type af_struct_field(T) :: {'struct_field', anno(), atom(), T}.
 
 -type af_map_pattern() ::
         {'map', anno(), [af_assoc_exact(af_pattern())]}.
