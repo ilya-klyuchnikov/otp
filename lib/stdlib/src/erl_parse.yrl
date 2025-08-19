@@ -881,6 +881,9 @@ processed (see section [Error Information](#module-error-information)).
     af_record_decl/0,
     af_record_field/1,
     af_record_field_type/0,
+    af_struct_field/1,
+    af_struct_field_access/0,
+    af_struct_field_decl/0,
     af_variable/0,
     af_typed_field/0,
     af_wild_attribute/0,
@@ -906,6 +909,7 @@ processed (see section [Error Information](#module-error-information)).
                        | af_behaviour()
                        | af_export()
                        | af_import()
+                       | af_import_struct()
                        | af_export_type()
                        | af_compile()
                        | af_file()
@@ -927,6 +931,8 @@ processed (see section [Error Information](#module-error-information)).
 -type af_export() :: {'attribute', anno(), 'export', af_fa_list()}.
 
 -type af_import() :: {'attribute', anno(), 'import', {module(), af_fa_list()}}.
+
+-type af_import_struct() :: {'attribute', anno(), 'import_struct', {module(), [atom()]}}.
 
 -type af_fa_list() :: [{function_name(), arity()}].
 
@@ -954,8 +960,8 @@ processed (see section [Error Information](#module-error-information)).
         {'attribute', anno(), 'struct', {StructName :: atom(), [af_struct_field_decl()]}}.
 
 -type af_struct_field_decl() ::
-        {'struct_def_field', anno(), FieldName :: atom()}
-        | {'struct_def_field', anno(), FieldName :: atom(), Value :: abstract_expr()}.
+        {'struct_def_field', anno(), FieldName :: af_atom()}
+        | {'struct_def_field', anno(), FieldName :: af_atom(), Value :: abstract_expr()}.
 
 -type af_type_decl() :: {'attribute', anno(), type_attr(),
                          {type_name(), abstract_type(), [af_variable()]}}.
