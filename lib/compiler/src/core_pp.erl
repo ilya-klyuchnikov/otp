@@ -22,7 +22,7 @@
 %% Purpose : Core Erlang (naive) prettyprinter
 
 -module(core_pp).
-% -compile(warn_missing_spec_all).
+-compile(warn_missing_spec_all).
 -moduledoc false.
 
 -export([format/1,format_all/1]).
@@ -523,6 +523,7 @@ format_map_pair(Op, K, V, Ctxt0) ->
     Ctxt2 = add_indent(Ctxt0, width(Txt, Ctxt1)),
     [Txt,Op,format(V, Ctxt2)].
 
+-spec format_struct_pair(string(), atom(), cerl:cerl(), ctxt()) -> iolist().
 format_struct_pair(Op, K, V, Ctxt0) ->
   Ctxt1 = add_indent(Ctxt0, 1),
   Txt = atom_to_list(K),
