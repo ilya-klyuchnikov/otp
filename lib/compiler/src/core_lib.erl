@@ -22,7 +22,7 @@
 %% Purpose: Core Erlang abstract syntax functions.
 
 -module(core_lib).
-% -compile(warn_missing_spec_all).
+-compile(warn_missing_spec_all).
 -moduledoc false.
 
 -export([make_values/1]).
@@ -178,6 +178,7 @@ vu_map_pairs(V, [#c_map_pair{key=Key,val=Pat}|T]) ->
         vu_map_pairs(V, T);
 vu_map_pairs(_, []) -> false.
 
+-spec vu_struct_pairs(cerl:var_name(), [cerl:c_struct_pair()]) -> boolean().
 vu_struct_pairs(V, [#c_struct_pair{val=Pat}|T]) ->
   vu_pattern(V, Pat) orelse vu_struct_pairs(V, T);
 vu_struct_pairs(_, []) -> false.
