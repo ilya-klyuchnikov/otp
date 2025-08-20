@@ -116,7 +116,7 @@
                    'build_stacktrace' |
                    'call' | 'catch_end' |
                    'executable_line' | 'extract' |
-                   'get_hd' | 'get_map_element' | 'get_tl' | 'get_tuple_element' |
+                   'get_hd' | 'get_map_element' | 'get_struct_element' | 'get_tl' | 'get_tuple_element' |
                    'has_map_field' |
                    'is_nonempty_list' | 'is_tagged_tuple' |
                    'kill_try_tag' |

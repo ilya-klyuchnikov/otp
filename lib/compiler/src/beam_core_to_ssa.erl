@@ -159,6 +159,7 @@
     #cg_internal{} |
     #cg_letrec_goto{} |
     #cg_map{} |
+    #cg_struct{} |
     #cg_match{} |
     #cg_opaque{} |
     #cg_select{} |
@@ -1199,7 +1200,7 @@ make_vars(Vs) -> [#b_var{name=V} || V <- Vs].
 
 %% call_type(Mod, Name, [Arg], State) -> bif | call | is_record | error.
 
--spec call_type(cerl:cerl(), cerl:cerl(), [cerl:cerl()], state()) -> bif | call | is_record | error.
+-spec call_type(cerl:cerl(), cerl:cerl(), [cerl:cerl()], state()) -> bif | call | is_record | error | is_tagged_struct.
 call_type(#c_literal{val=M}, #c_literal{val=F}, As, St) when is_atom(M), is_atom(F) ->
     case is_guard_bif(M, F, As) of
         false ->
@@ -2190,7 +2191,7 @@ arg_arg(Con) -> Con.
 arg_alias(#ialias{vars=As}) -> As;
 arg_alias(_Con) -> [].
 
--type con() :: cg_cons | cg_tuple | cg_map | cg_binary | cg_bin_end | cg_bin_int | cg_bin_seg | b_var | cg_atom | cg_int | cg_float | cg_nil | b_literal.
+-type con() :: cg_cons | cg_tuple | cg_map | cg_struct | cg_binary | cg_bin_end | cg_bin_int | cg_bin_seg | b_var | cg_atom | cg_int | cg_float | cg_nil | b_literal.
 
 -spec arg_con(kexpr()) -> con().
 arg_con(Arg) ->
