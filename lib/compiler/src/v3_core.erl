@@ -2977,6 +2977,7 @@ pattern_map_pair({map_field_exact,L,K,V}, St0) ->
 -spec pattern_struct_pair(erl_parse:af_struct_field(erl_parse:af_pattern()), state()) -> {cerl:c_struct_pair(), state()}.
 pattern_struct_pair({struct_field, L, K, V}, St0) ->
   {Cv, St1} = pattern(V, St0),
+  % eqwalizer:ignore val is inferred as imap()/ibinary() too
   {#c_struct_pair{anno=lineno_anno(L, St1),key=K,val=Cv},St1}.
 
 -spec pat_alias_map_pairs([#imappair{}]) -> [#imappair{}].
@@ -3885,6 +3886,7 @@ upattern(#c_alias{var=V0,pat=P0}=Alias, Ks, St0) ->
     {Alias#c_alias{var=V1,pat=P1},Vg ++ Pg,union(Vv, Pv),union(Vu, Pu),St2};
 upattern(#c_struct{es=Es0}=Str, Ks, St0) ->
     {Es1,Esg,Esv,Eus,St1} = upattern_list(Es0, Ks, St0),
+    % eqwalizer:ignore - Es1 :: [c()]
     {Str#c_struct{es=Es1},Esg,Esv,Eus,St1};
 upattern(#c_struct_pair{val=V0}=Pair, Ks, St0) ->
     {V,Vg,Vn,Vu,St1} = upattern(V0, Ks, St0),
@@ -4113,6 +4115,7 @@ ren_pat_map([], _Ks, Subs, St) ->
 ren_pat_struct([#c_struct_pair{val=Val0}=StrPair|Es0], Ks, Subs0, St0) ->
   {Val,Subs1,St1} = ren_pat(Val0, Ks, Subs0, St0),
   {Es,Subs,St} = ren_pat_struct(Es0, Ks, Subs1, St1),
+  % eqwalizer:ignore Val :: c() | i()
   {[StrPair#c_struct_pair{val=Val}|Es],Subs,St};
 ren_pat_struct([], _Ks, Subs, St) ->
   {[],Subs,St}.
