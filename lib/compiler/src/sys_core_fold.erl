@@ -69,7 +69,7 @@
 %% all values where the key contains pattern variables.
 
 -module(sys_core_fold).
-% -compile(warn_missing_spec_all).
+-compile(warn_missing_spec_all).
 -moduledoc false.
 
 -export([module/2,format_error/1]).
@@ -1220,10 +1220,12 @@ map_pair_pattern(#c_map_pair{op=#c_literal{val=exact},key=K0,val=V0}=Pair,{Isub,
     {V,Osub} = pattern(V0,Isub,Osub0),
     {Pair#c_map_pair{key=K,val=V},{Isub,Osub}}.
 
+-spec struct_pair_pattern_list([cerl:c_struct_pair()], sub(), sub()) -> {[cerl:c_struct_pair()], sub()}.
 struct_pair_pattern_list(Ps0, Isub, Osub0) ->
   {Ps,{_,Osub}} = mapfoldl(fun struct_pair_pattern/2, {Isub,Osub0}, Ps0),
   {Ps,Osub}.
 
+-spec struct_pair_pattern(cerl:c_struct_pair(), {sub(), sub()}) -> {cerl:c_struct_pair(), {sub(), sub()}}.
 struct_pair_pattern(#c_struct_pair{val=V0}=Pair,{Isub,Osub0}) ->
   {V,Osub} = pattern(V0,Isub,Osub0),
   {Pair#c_struct_pair{val=V},{Isub,Osub}}.
