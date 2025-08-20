@@ -80,7 +80,7 @@
 %% fun is not a safe
 
 -module(v3_core).
-% -compile(warn_missing_spec_all).
+-compile(warn_missing_spec_all).
 -moduledoc false.
 
 -export([module/2,format_error/1]).
@@ -2960,6 +2960,7 @@ pattern_map_pairs(Ps, St0) ->
     {CMapPairs,St1} = mapfoldl(fun pattern_map_pair/2, St0, Ps),
     {pat_alias_map_pairs(CMapPairs),St1}.
 
+-spec pattern_struct_pairs([erl_parse:af_struct_field(erl_parse:af_pattern())], state()) -> {[cerl:c_struct_pair()], state()}.
 pattern_struct_pairs(Ps,St0) ->
     mapfoldl(fun pattern_struct_pair/2, St0, Ps).
 
@@ -2973,6 +2974,7 @@ pattern_map_pair({map_field_exact,L,K,V}, St0) ->
                key=Ck,
                val=Cv},St2}.
 
+-spec pattern_struct_pair(erl_parse:af_struct_field(erl_parse:af_pattern()), state()) -> {cerl:c_struct_pair(), state()}.
 pattern_struct_pair({struct_field, L, K, V}, St0) ->
   {Cv, St1} = pattern(V, St0),
   {#c_struct_pair{anno=lineno_anno(L, St1),key=K,val=Cv},St1}.
@@ -4107,6 +4109,7 @@ ren_pat_map([#imappair{val=Val0}=MapPair|Es0], Ks, Subs0, St0) ->
 ren_pat_map([], _Ks, Subs, St) ->
     {[],Subs,St}.
 
+-spec ren_pat_struct([cerl:c_struct_pair()], known(), {[iset()], [iset()]}, state()) -> {[cerl:c_struct_pair()], {[iset()], [iset()]}, state()}.
 ren_pat_struct([#c_struct_pair{val=Val0}=StrPair|Es0], Ks, Subs0, St0) ->
   {Val,Subs1,St1} = ren_pat(Val0, Ks, Subs0, St0),
   {Es,Subs,St} = ren_pat_struct(Es0, Ks, Subs1, St1),
@@ -4206,6 +4209,7 @@ cpat_map_pairs([#imappair{anno=#a{anno=Anno},op=Op,key=Key0,val=Val0}|T]) ->
     [Pair|cpat_map_pairs(T)];
 cpat_map_pairs([]) -> [].
 
+-spec cpat_struct_pairs([cerl:c_struct_pair()]) -> [cerl:c_struct_pair()].
 cpat_struct_pairs([#c_struct_pair{val=Val0}=Pair0|T]) ->
     Val = cpattern(Val0),
     Pair = Pair0#c_struct_pair{val=Val},
@@ -4841,8 +4845,7 @@ size_var_before_bin(#c_binary{anno=Anno0,segments=Segments}=Bin0, Bef, St0) ->
     [cerl:c_map_pair()], cerl:c_map(), state(), [cerl:c_map_pair()]
 ) -> {
     c(),
-    {split, [c()], fun(), c(), nil}
-    | {split, [c()], todo(), todo()}, state()
+    {split, [c()], fun(), c(), nil} | {split, [c()], todo(), todo()}, state()
 } | none.
 split_map_pat([#c_map_pair{key=Key,val=Val}=E0|Es], Map0, St0, Acc) ->
     case eval_map_key(Key, E0, Es, Map0, St0) of
@@ -4863,6 +4866,12 @@ split_map_pat([#c_map_pair{key=Key,val=Val}=E0|Es], Map0, St0, Acc) ->
     end;
 split_map_pat([], _, _, _) -> none.
 
+-spec split_struct_pat(
+    [cerl:c_struct_pair()], cerl:c_struct(), state(), [cerl:c_struct_pair()]
+) -> {
+    c(),
+    {split, [c()], fun(), c(), nil} | {split, [c()], todo(), todo()}, state()
+} | none.
 split_struct_pat([#c_struct_pair{val=Val}=E0|Es], Str0, St0, Acc) ->
   case split_pat(Val, St0) of
     none ->
@@ -4871,7 +4880,7 @@ split_struct_pat([#c_struct_pair{val=Val}=E0|Es], Str0, St0, Acc) ->
       {Var,St} = new_var(St1),
       E = E0#c_struct_pair{val=Var},
       Str = Str0#c_struct{es=reverse(Acc, [E|Es])},
-      {Str,{split, [Var],Ps,Split,St}}
+      {Str,{split, [Var],Ps,Split},St}
   end;
 split_struct_pat([], _, _, _) -> none.
 
