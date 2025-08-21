@@ -210,8 +210,7 @@ pattern({struct,Anno,N,Ps}, St0) when is_atom(N) ->
             #{N := {imported, M0}} -> M0;
             #{N := local} -> St0#exprec.module
         end,
-    {TPs,St1} = pattern_list(Ps, St0),
-    {{struct,Anno,{M,N},TPs},St1};
+    pattern({struct,Anno,{M,N},Ps},St0);
 pattern({struct,Anno,{},Ps}, St0) ->
     {TPs,St1} = pattern_list(Ps, St0),
     {{struct,Anno,{},TPs},St1};
@@ -464,27 +463,19 @@ expr({struct,Anno,N,Inits},St0) when is_atom(N) ->
             #{N := {imported, M0}} -> M0;
             #{N := local} -> St0#exprec.module
         end,
-    Struct0 =
-        {call,
-            Anno,
-            {remote,Anno,{atom,Anno,struct},{atom,Anno,create}},
-            [{atom, Anno, M},{atom, Anno, N}]},
-    {Struct1,St1} = expr(Struct0, St0),
-    {Ue,St2} = struct_init_update(Struct1, Anno, Inits, St1),
-    expr(Ue, St2);
+    expr({struct,Anno,{M,N},Inits}, St0);
 expr({struct_update,_A,Str,{M,N},Updates}, St0) ->
     Anno = erl_parse:first_anno(Str),
     update_struct_fields(Anno, Str, {M, N}, Updates, St0);
 expr({struct_update,_A,Str,{},Updates}, St0) ->
     Anno = erl_parse:first_anno(Str),
     update_struct_fields(Anno, Str, {}, Updates, St0);
-expr({struct_update,_A,Str,N,Updates}, St0) when is_atom(N) ->
+expr({struct_update,A,Str,N,Updates}, St0) when is_atom(N) ->
     M = case St0#exprec.structype of
             #{N := {imported, M0}} -> M0;
             #{N := local} -> St0#exprec.module
         end,
-    Anno = erl_parse:first_anno(Str),
-    update_struct_fields(Anno, Str, {M, N}, Updates, St0);
+    expr({struct_update,A,Str,{M,N},Updates}, St0);
 expr({struct_field,Anno,K,E0}, St0) ->
     {E1,St1} = expr(E0, St0),
     {{struct_field,Anno,K,E1}, St1};
@@ -494,13 +485,12 @@ expr({struct_field_expr,_A,Str,{M,N}, F}, St) ->
 expr({struct_field_expr,_A,Str,{}, F}, St) ->
     Anno = erl_parse:first_anno(Str),
     get_struct_field(Anno, Str, F, {}, St);
-expr({struct_field_expr,_A,Str,N, F}, St) when is_atom(N) ->
+expr({struct_field_expr,A,Str,N, F}, St) when is_atom(N) ->
     M = case St#exprec.structype of
             #{N := {imported, M0}} -> M0;
             #{N := local} -> St#exprec.module
         end,
-    Anno = erl_parse:first_anno(Str),
-    get_struct_field(Anno, Str, F, {M, N}, St);
+    expr({struct_field_expr,A,Str,{M,N},F}, St);
 expr({bin,Anno,Es0}, St0) ->
     {Es1,St1} = expr_bin(Es0, St0),
     {{bin,Anno,Es1},St1};
