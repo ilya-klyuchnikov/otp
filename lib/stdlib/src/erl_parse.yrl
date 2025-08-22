@@ -451,8 +451,6 @@ struct_expr -> '#_' record_tuple :
 %% {struct_field_expr, Anno, E, Na, Fa}
 struct_expr -> expr_max '#' atom ':' atom '.' atom :
 	{struct_field_expr,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},element(3, '$7')}.
-struct_expr -> expr_max '&' atom '.' atom :
-	{struct_field_expr,?anno('$2'),'$1',element(3, '$3'),element(3, '$5')}.
 struct_expr -> expr_max '#_' '.' atom :
 	{struct_field_expr,?anno('$2'),'$1',{},element(3, '$4')}.
 
@@ -461,21 +459,13 @@ struct_expr -> expr_max '#_' '.' atom :
 %% {struct, Anno, Expr, N, Pairs}
 struct_expr -> expr_max '#' atom ':' atom record_tuple :
 	{struct_update,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
-struct_expr -> expr_max '&' atom record_tuple :
-	{struct_update,?anno('$2'),'$1',element(3, '$3'),'$4'}.
 struct_expr -> expr_max '#_' record_tuple :
 	{struct_update,?anno('$2'),'$1',{},'$3'}.
-struct_expr -> struct_expr '#' atom ':' atom record_tuple :
-	{struct_update,?anno('$2'),'$1',{element(3, '$3'),element(3, '$5')},'$6'}.
-struct_expr -> struct_expr '&' atom record_tuple :
-	{struct_update,?anno('$2'),'$1',element(3, '$3'),'$4'}.
 struct_expr -> struct_expr '#_' record_tuple :
     	{struct_update,?anno('$2'),'$1',{},'$3'}.
 
 struct_pat_expr -> '#' atom ':' atom record_tuple :
 	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$5'}.
-struct_pat_expr -> '&' atom record_tuple :
-	{struct,?anno('$1'),element(3, '$2'),'$3'}.
 struct_pat_expr -> '#_' record_tuple :
     % {} as a special marker
 	{struct,?anno('$1'), {},'$2'}.
@@ -869,6 +859,7 @@ processed (see section [Error Information](#module-error-information)).
     af_qualifier_seq/0,
     af_record_decl/0,
     af_record_field/1,
+    af_record_field_access/1,
     af_record_field_type/0,
     af_struct_field_access/0,
     af_variable/0,
@@ -1155,16 +1146,16 @@ processed (see section [Error Information](#module-error-information)).
 -type af_record_field(T) :: {'record_field', anno(), af_field_name(), T}.
 
 -type af_struct_creation() ::
-        {'struct', anno(), atom() | {atom(), atom()} | {}, [af_record_field(abstract_expr())]}.
+        {'struct', anno(), {atom(), atom()} | {}, [af_record_field(abstract_expr())]}.
 
 -type af_struct_update() ::
-        {'struct_update', anno(), abstract_expr(), atom() | {atom(), atom()} | {}, [af_record_field(abstract_expr())]}.
+        {'struct_update', anno(), abstract_expr(), {atom(), atom()} | {}, [af_record_field(abstract_expr())]}.
 
 -type af_struct_field_access() ::
-        {'struct_field_expr', anno(), abstract_expr(), atom() | {atom(), atom()} | {}, atom()}.
+        {'struct_field_expr', anno(), abstract_expr(), {atom(), atom()} | {}, atom()}.
 
 -type af_struct_pattern() ::
-        {'struct', anno(), atom() | {atom(), atom()} | {}, [af_record_field(af_pattern())]}.
+        {'struct', anno(), {atom(), atom()} | {}, [af_record_field(af_pattern())]}.
 
 -type af_map_pattern() ::
         {'map', anno(), [af_assoc_exact(af_pattern())]}.
