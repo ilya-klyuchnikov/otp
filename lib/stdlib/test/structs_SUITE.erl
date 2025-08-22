@@ -263,8 +263,8 @@ t_20(_Config) ->
 
 %% local structs
 t_21(_Config) ->
-  Local = &local{},
-  &local{a = A} = Local,
+  Local = #local{},
+  #local{a = A} = Local,
   a_default = A.
 
 

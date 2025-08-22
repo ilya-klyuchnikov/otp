@@ -3143,19 +3143,21 @@ expr({record_index,Anno,Name,Field}, _Vt, St) ->
     check_record(Anno, Name, St,
                  fun (Dfs, St1) -> record_field(Field, Name, Dfs, St1) end);
 expr({record,Anno,Name,Inits}, Vt, St) ->
-    check_record(Anno, Name, St,
+    case is_native_record_defined(Name, St) of
+        true ->
+            {Usvt, St1} = check_struct_fields(Inits, Vt, St),
+            St2 = call_struct(Anno, Name, St1),
+            St3 = check_struct_fields_usage(Name, Inits, St2),
+            St4 = check_struct_fields_init(Name, Inits, St3, Anno),
+            {Usvt, St4};
+        false -> check_record(Anno, Name, St,
                  fun (Dfs, St1) ->
                          init_fields(Inits, Anno, Name, Dfs, Vt, St1)
-                 end);
+                 end)
+    end;
 expr({struct, _Anno, {MName, Name}, Inits}, Vt, St) when is_atom(MName),is_atom(Name) ->
   {Usvt, St1} = check_struct_fields(Inits, Vt, St),
   {Usvt, St1};
-expr({struct, Anno, Name, Inits}, Vt, St) when is_atom(Name) ->
-  {Usvt, St1} = check_struct_fields(Inits, Vt, St),
-  St2 = call_struct(Anno, Name, St1),
-  St3 = check_struct_fields_usage(Name, Inits, St2),
-  St4 = check_struct_fields_init(Name, Inits, St3, Anno),
-  {Usvt, St4};
 expr({struct_update, _Anno, Expr, {MName, Name}, Updates}, Vt, St) when is_atom(MName),is_atom(Name) ->
   {Rvt, St1} = expr(Expr, Vt, St),
   {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
@@ -3674,6 +3676,10 @@ check_record(Anno, Name, St, CheckFun) ->
                 GuessF -> {[],add_error(Anno, {undefined_record,Name,GuessF}, St)}
             end
     end.
+
+-spec is_native_record_defined(Name :: atom(), lint_state()) -> boolean().
+is_native_record_defined(Name, St) ->
+    maps:is_key(Name, St#lint.structs) orelse orddict:is_key(Name, St#lint.struct_imports).
 
 -spec call_struct(anno(), atom(), lint_state()) -> lint_state().
 call_struct(Anno, Name, St) ->

@@ -442,8 +442,6 @@ record_field -> atom '=' expr : {record_field,?anno('$1'),'$1','$3'}.
 %% {struct, Anno, N, Pairs}
 struct_expr -> '#' atom ':' atom record_tuple :
 	{struct,?anno('$1'),{element(3, '$2'), element(3, '$4')},'$5'}.
-struct_expr -> '&' atom record_tuple :
-	{struct,?anno('$1'),element(3, '$2'),'$3'}.
 struct_expr -> '#_' record_tuple :
     % {} as a special marker
 	{struct,?anno('$1'), {},'$2'}.
