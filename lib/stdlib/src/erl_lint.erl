@@ -187,7 +187,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                    :: #{atom() => {anno(),Fields :: [erl_parse:af_field_decl()]}},
                struct_imports=[] :: orddict:orddict(atom(), module()),
                structs=maps:new()
-                   :: #{atom() => {anno(),Fields :: [erl_parse:af_struct_field_decl()]}},
+                   :: #{atom() => {anno(),Fields :: [erl_parse:af_field_decl()]}},
                locals=gb_sets:empty()     %All defined functions (prescanned)
                    :: gb_sets:set(fa()),
                no_auto={set, gb_sets:empty()} %Functions explicitly not autoimported
@@ -3560,7 +3560,7 @@ record_def(Anno, Name, Fs0, St0) ->
             check_type({type, nowarn(), product, Types}, St3)
     end.
 
--spec struct_def(anno(), atom(), [erl_parse:af_struct_field_decl()], lint_state()) -> lint_state().
+-spec struct_def(anno(), atom(), [erl_parse:af_field_decl()], lint_state()) -> lint_state().
 struct_def(Anno, Name, Fs0, St0) ->
   case is_map_key(Name, St0#lint.structs) of
     true -> add_error(Anno, {redefine_struct,Name}, St0);
@@ -3604,18 +3604,18 @@ def_fields(Fs0, Name, St0) ->
           end, {[],St0}, Fs0).
 
 -spec struct_def_fields(
-    [erl_parse:af_struct_field_decl()],
+    [erl_parse:af_field_decl()],
     atom(),
     lint_state()
-) -> {[erl_parse:af_struct_field_decl()], lint_state()}.
+) -> {[erl_parse:af_field_decl()], lint_state()}.
 struct_def_fields(Fs0, Name, St0) ->
    foldl(fun
-           ({struct_def_field, Af, {atom, _Aa, F}}=Field, {Fs, St}) ->
+           ({record_field, Af, {atom, _Aa, F}}=Field, {Fs, St}) ->
               case exist_struct_field(F, Fs) of
                 true -> {Fs, add_error(Af, {redefine_struct_field_def,Name,F}, St)};
                 false -> {[Field|Fs],St}
               end;
-           ({struct_def_field, Af, {atom, _Aa, F}, _Init}=Field, {Fs, St}) ->
+           ({record_field, Af, {atom, _Aa, F}, _Init}=Field, {Fs, St}) ->
              case exist_struct_field(F, Fs) of
                true -> {Fs, add_error(Af, {redefine_struct_field_def,Name,F}, St)};
                false -> {[Field|Fs],St}
@@ -3895,14 +3895,14 @@ exist_field(F, [{record_field,_Af,{atom,_Aa,F},_Val}|_Fs]) -> true;
 exist_field(F, [_|Fs]) -> exist_field(F, Fs);
 exist_field(_F, []) -> false.
 
--spec exist_struct_field(atom(), [erl_parse:af_struct_field_decl()]) -> boolean().
-exist_struct_field(F, [{struct_def_field,_Af,{atom,_Aa,F},_Val}|_Fs]) -> true;
-exist_struct_field(F, [{struct_def_field,_Af,{atom,_Aa,F}}|_Fs]) -> true;
+-spec exist_struct_field(atom(), [erl_parse:af_field_decl()]) -> boolean().
+exist_struct_field(F, [{record_field,_Af,{atom,_Aa,F},_Val}|_Fs]) -> true;
+exist_struct_field(F, [{record_field,_Af,{atom,_Aa,F}}|_Fs]) -> true;
 exist_struct_field(F, [_|Fs]) -> exist_struct_field(F, Fs);
 exist_struct_field(_F, []) -> false.
 
--spec not_inited_struct_fields([erl_parse:af_struct_field_decl()]) -> [atom()].
-not_inited_struct_fields([{struct_def_field,_Af,{atom,_Aa,F}}|Fs]) ->
+-spec not_inited_struct_fields([erl_parse:af_field_decl()]) -> [atom()].
+not_inited_struct_fields([{record_field,_Af,{atom,_Aa,F}}|Fs]) ->
   [F | not_inited_struct_fields(Fs)];
 not_inited_struct_fields([_|Fs]) ->
   not_inited_struct_fields(Fs);
