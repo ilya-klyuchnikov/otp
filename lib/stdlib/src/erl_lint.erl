@@ -2343,6 +2343,12 @@ pattern({record_index,Anno,Name,Field}, _Vt, _Old, St) ->
                      end),
     {Vt1,[],St1};
 pattern({record,Anno,Name,Pfs}, Vt, Old, St) ->
+    case is_native_record_defined(Name, St) of
+        true ->
+            St1 = call_struct(Anno, Name, St),
+            St2 = check_struct_fields_usage(Name, Pfs, St1),
+            pattern_struct_fields(Pfs, Vt, Old, St2);
+        false ->
     case maps:find(Name, St#lint.records) of
         {ok,{_Anno,Fields}} ->
             St1 = used_record(Name, St),
@@ -2354,13 +2360,10 @@ pattern({record,Anno,Name,Pfs}, Vt, Old, St) ->
                 [] -> {[],[],add_error(Anno, {undefined_record,Name}, St)};
                 GuessF -> {[],[],add_error(Anno, {undefined_record,Name,GuessF}, St)}
             end
+    end
     end;
 pattern({struct, _Anno, {_Mod, _Name}, Fs}, Vt, Old, St) ->
   pattern_struct_fields(Fs, Vt, Old, St);
-pattern({struct, Anno, Name, Fs}, Vt, Old, St) when is_atom(Name) ->
-  St1 = call_struct(Anno, Name, St),
-  St2 = check_struct_fields_usage(Name, Fs, St1),
-  pattern_struct_fields(Fs, Vt, Old, St2);
 pattern({struct, _Anno, {}, Fs}, Vt, Old, St) ->
   pattern_struct_fields(Fs, Vt, Old, St);
 pattern({bin,_,Fs}, Vt, Old, St) ->
@@ -2781,13 +2784,21 @@ gexpr({map,_Anno,Src,Es}, Vt, St) ->
 gexpr({record_index,Anno,Name,Field}, _Vt, St) ->
     check_record(Anno, Name, St,
                  fun (Dfs, St1) -> record_field(Field, Name, Dfs, St1) end );
-gexpr({record_field,Anno,Rec,Name,Field}, Vt, St0) ->
+gexpr({record_field,Anno,Rec,Name,Field}=E, Vt, St0) ->
+    case is_native_record_defined(Name, St0) of
+        true ->
+            St1 = call_struct(Anno, Name, St0),
+            {Rvt,St2} = gexpr(Rec, Vt, St1),
+            St3 = check_struct_field_expr_usage(E, St2),
+            {Rvt,St3};
+        false ->
     {Rvt,St1} = gexpr(Rec, Vt, St0),
     {Fvt,St2} = check_record(Anno, Name, St1,
                              fun (Dfs, St) ->
                                      record_field(Field, Name, Dfs, St)
                              end),
-    {vtmerge(Rvt, Fvt),St2};
+    {vtmerge(Rvt, Fvt),St2}
+    end;
 gexpr({record,Anno,Name,Inits}, Vt, St) ->
     check_record(Anno, Name, St,
                  fun (Dfs, St1) ->
@@ -2799,11 +2810,6 @@ gexpr({struct_field_expr, _Anno, Str, {_MName,_Name}, FieldName}, Vt, St0) when 
 gexpr({struct_field_expr, _Anno, Str, {}, FieldName}, Vt, St0) when is_atom(FieldName) ->
   {Rvt,St1} = gexpr(Str, Vt, St0),
   {Rvt,St1};
-gexpr({struct_field_expr, Anno, Str, Name, FieldName}=E, Vt, St0) when is_atom(Name), is_atom(FieldName) ->
-  St1 = call_struct(Anno, Name, St0),
-  {Rvt,St2} = gexpr(Str, Vt, St1),
-  St3 = check_struct_field_expr_usage(E, St2),
-  {Rvt,St3};
 gexpr({bin,_Anno,Fs}, Vt,St) ->
     expr_bin(Fs, Vt, St, fun gexpr/3);
 gexpr({call,_Anno,{atom,_Ar,is_record},[E,{atom,An,Name}]}, Vt, St0) ->
@@ -3163,13 +3169,6 @@ expr({struct_update, _Anno, Expr, {MName, Name}, Updates}, Vt, St) when is_atom(
   {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
   Usvt1 = vtmerge(Rvt, Usvt),
   {Usvt1, St2};
-expr({struct_update, Anno, Expr, Name, Updates}, Vt, St) when is_atom(Name) ->
-  {Rvt, St1} = expr(Expr, Vt, St),
-  {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
-  Usvt1 = vtmerge(Rvt, Usvt),
-  St3 = call_struct(Anno, Name, St2),
-  St4 = check_struct_fields_usage(Name, Updates, St3),
-  {Usvt1, St4};
 expr({struct_update, _Anno, Expr, {}, Updates}, Vt, St) ->
   {Rvt, St1} = expr(Expr, Vt, St),
   {Usvt, St2} = check_struct_fields(Updates, Vt, St1),
@@ -3179,19 +3178,31 @@ expr({struct_field_expr, _Anno, Str, {_MName,_Name}, FieldName}, Vt, St) when is
   expr(Str, Vt, St);
 expr({struct_field_expr, _Anno, Str, {}, FieldName}, Vt, St) when is_atom(FieldName) ->
   expr(Str, Vt, St);
-expr({struct_field_expr, Anno, Str, Name, FieldName}=E, Vt, St) when is_atom(Name),is_atom(FieldName) ->
-  {Usvt, St1} = expr(Str, Vt, St),
-  St2 = call_struct(Anno, Name, St1),
-  St3 = check_struct_field_expr_usage(E, St2),
-  {Usvt, St3};
-expr({record_field,Anno,Rec,Name,Field}, Vt, St0) ->
+expr({record_field,Anno,Rec,Name,Field}=E, Vt, St0) ->
+    case is_native_record_defined(Name, St0) of
+        true ->
+            {Usvt, St1} = expr(Rec, Vt, St0),
+            St2 = call_struct(Anno, Name, St1),
+            St3 = check_struct_field_expr_usage(E, St2),
+            {Usvt, St3};
+        false ->
     {Rvt,St1} = record_expr(Anno, Rec, Vt, St0),
     {Fvt,St2} = check_record(Anno, Name, St1,
                              fun (Dfs, St) ->
                                      record_field(Field, Name, Dfs, St)
                              end),
-    {vtmerge(Rvt, Fvt),St2};
+    {vtmerge(Rvt, Fvt),St2}
+    end;
 expr({record,Anno,Rec,Name,Upds}, Vt, St0) ->
+    case is_native_record_defined(Name, St0) of
+        true ->
+            {Rvt, St1} = expr(Rec, Vt, St0),
+            {Usvt, St2} = check_struct_fields(Upds, Vt, St1),
+            Usvt1 = vtmerge(Rvt, Usvt),
+            St3 = call_struct(Anno, Name, St2),
+            St4 = check_struct_fields_usage(Name, Upds, St3),
+            {Usvt1, St4};
+        false ->
     {Rvt,St1} = record_expr(Anno, Rec, Vt, St0),
     {Usvt,St2} = check_record(Anno, Name, St1,
                           fun (Dfs, St) ->
@@ -3200,6 +3211,7 @@ expr({record,Anno,Rec,Name,Upds}, Vt, St0) ->
     case has_wildcard_field(Upds) of
         no -> {vtmerge(Rvt, Usvt), warn_if_literal_update(Anno, Rec, St2)};
         {yes, WildAnno} -> {[],add_error(WildAnno, {wildcard_in_update,Name}, St2)}
+    end
     end;
 expr({bin,_Anno,Fs}, Vt, St) ->
     expr_bin(Fs, Vt, St, fun expr/3);
@@ -4029,8 +4041,8 @@ check_struct_fields_init(SName, Inits, St0, Anno) ->
   end.
 
 
--spec check_struct_field_expr_usage(erl_parse:af_struct_field_access(), lint_state()) -> lint_state().
-check_struct_field_expr_usage({struct_field_expr, Anno, _Str, SName, FName}, St) ->
+-spec check_struct_field_expr_usage(erl_parse:af_record_field_access(_), lint_state()) -> lint_state().
+check_struct_field_expr_usage({record_field, Anno, _Str, SName, {atom, _, FName}}, St) ->
   case maps:find(SName, St#lint.structs) of
     error ->
       St;
