@@ -3918,7 +3918,7 @@ find_field(F, [_|Fs]) -> find_field(F, Fs);
 find_field(_F, []) -> error.
 
 -spec pattern_struct_fields(
-    [erl_parse:af_struct_field(erl_parse:af_pattern())],
+    [erl_parse:af_record_field(erl_parse:af_pattern())],
     var_table(),
     var_table(),
     lint_state()
@@ -3943,7 +3943,7 @@ pattern_struct_fields(Fs, Vt0, Old, St0) ->
 %% in struct usages.
 %% We don't have a definition of the struct here.
 -spec check_struct_fields(
-    [erl_parse:af_struct_field(erl_parse:abstract_expr())],
+    [erl_parse:af_record_field(erl_parse:abstract_expr())],
     var_table(),
     lint_state()
 ) -> {var_table(), lint_state()}.
@@ -3961,13 +3961,13 @@ check_struct_fields(Fs, Vt0, St0) ->
   {Uvt,St1}.
 
 -spec check_struct_field(
-    erl_parse:af_struct_field(erl_parse:abstract_expr()),
+    erl_parse:af_record_field(erl_parse:abstract_expr()),
     var_table(),
     lint_state(),
     [atom()],
     fun((dynamic(), var_table(), lint_state()) -> {var_table(), lint_state()})
 ) -> {[atom()], {var_table(), lint_state()}}.
-check_struct_field({struct_field, Af, F, Val}, Vt, St, Sfs, CheckFun) ->
+check_struct_field({record_field, Af, {atom, _, F}, Val}, Vt, St, Sfs, CheckFun) ->
   case member(F, Sfs) of
     true -> {Sfs, {[], add_error(Af, {redefine_struct_field, F}, St)}};
     false -> {[F|Sfs],CheckFun(Val, Vt, St)}
@@ -3977,7 +3977,7 @@ check_struct_field({struct_field, Af, F, Val}, Vt, St, Sfs, CheckFun) ->
 %% the struct definition. Issues warnings.
 -spec check_struct_fields_usage(
     atom(),
-    [erl_parse:af_struct_field(erl_parse:abstract_expr())],
+    [erl_parse:af_record_field(erl_parse:abstract_expr())],
     lint_state()
 ) -> lint_state().
 check_struct_fields_usage(SName, Fs, St0) ->
@@ -3986,7 +3986,7 @@ check_struct_fields_usage(SName, Fs, St0) ->
       St0;
     {ok, {_A, FieldDefs}} ->
       foldl(
-          fun({struct_field, Af, FName, _Val}, St) ->
+          fun({record_field, Af, {atom, _, FName}, _Val}, St) ->
             case exist_struct_field(FName, FieldDefs) of
               true -> St;
               false -> add_warning(Af, {undefined_struct_field, FName, SName}, St)
@@ -3999,7 +3999,7 @@ check_struct_fields_usage(SName, Fs, St0) ->
 
 -spec check_struct_fields_init(
     atom(),
-    [erl_parse:af_struct_field(erl_parse:abstract_expr())],
+    [erl_parse:af_record_field(erl_parse:abstract_expr())],
     lint_state(),
     anno()
 ) -> lint_state().
@@ -4010,7 +4010,7 @@ check_struct_fields_init(SName, Inits, St0, Anno) ->
     {ok, {_A, FieldDefs}} ->
       NotInitedInDef = not_inited_struct_fields(FieldDefs),
       Inited = foldl(
-        fun({struct_field, _Aa, FName, _Val}, Init) -> [FName | Init] end,
+        fun({record_field, _Aa, {atom, _, FName}, _Val}, Init) -> [FName | Init] end,
         [],
         Inits
       ),
