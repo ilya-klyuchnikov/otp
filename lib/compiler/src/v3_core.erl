@@ -1163,7 +1163,7 @@ sanitize({map,L,Ps0}) ->
     Ps = [sanitize(V) || {map_field_exact,_,_,V} <- Ps0],
     {tuple,L,Ps};
 sanitize({struct,L,_,Ps0}) ->
-    Ps = [sanitize(V) || {struct_field,_,_,V} <- Ps0],
+    Ps = [sanitize(V) || {record_field,_,_,V} <- Ps0],
     {tuple,L,Ps};
 sanitize({op,L,_Name,P1,P2}) ->
     {tuple,L,[sanitize(P1),sanitize(P2)]};
@@ -2960,7 +2960,7 @@ pattern_map_pairs(Ps, St0) ->
     {CMapPairs,St1} = mapfoldl(fun pattern_map_pair/2, St0, Ps),
     {pat_alias_map_pairs(CMapPairs),St1}.
 
--spec pattern_struct_pairs([erl_parse:af_struct_field(erl_parse:af_pattern())], state()) -> {[cerl:c_struct_pair()], state()}.
+-spec pattern_struct_pairs([erl_parse:af_record_field(erl_parse:af_pattern())], state()) -> {[cerl:c_struct_pair()], state()}.
 pattern_struct_pairs(Ps,St0) ->
     mapfoldl(fun pattern_struct_pair/2, St0, Ps).
 
@@ -2974,8 +2974,8 @@ pattern_map_pair({map_field_exact,L,K,V}, St0) ->
                key=Ck,
                val=Cv},St2}.
 
--spec pattern_struct_pair(erl_parse:af_struct_field(erl_parse:af_pattern()), state()) -> {cerl:c_struct_pair(), state()}.
-pattern_struct_pair({struct_field, L, K, V}, St0) ->
+-spec pattern_struct_pair(erl_parse:af_record_field(erl_parse:af_pattern()), state()) -> {cerl:c_struct_pair(), state()}.
+pattern_struct_pair({record_field, L, {atom, _, K}, V}, St0) ->
   {Cv, St1} = pattern(V, St0),
   % eqwalizer:ignore val is inferred as imap()/ibinary() too
   {#c_struct_pair{anno=lineno_anno(L, St1),key=K,val=Cv},St1}.
