@@ -132,6 +132,10 @@ init_structtype_imports([_|T], Stype) ->
     init_structtype_imports(T, Stype);
 init_structtype_imports([], Stype) -> Stype.
 
+-spec is_native_record_defined(Name :: atom(), #exprec{}) -> boolean().
+is_native_record_defined(Name, St) ->
+    maps:is_key(Name, St#exprec.structype).
+
 -spec forms([erl_parse:abstract_form()], #exprec{}) -> {[erl_parse:abstract_form()], #exprec{}}.
 forms([{attribute,_,record,{Name,Defs}}=Attr | Fs], St0) ->
     NDefs = normalise_fields(Defs),
@@ -205,12 +209,6 @@ pattern({map_field_exact,Anno,K0,V0}, St0) ->
 pattern({struct,Anno,{M,N},Ps}, St0) ->
     {TPs,St1} = pattern_list(Ps, St0),
     {{struct,Anno,{M,N},TPs},St1};
-pattern({struct,Anno,N,Ps}, St0) when is_atom(N) ->
-    M = case St0#exprec.structype of
-            #{N := {imported, M0}} -> M0;
-            #{N := local} -> St0#exprec.module
-        end,
-    pattern({struct,Anno,{M,N},Ps},St0);
 pattern({struct,Anno,{},Ps}, St0) ->
     {TPs,St1} = pattern_list(Ps, St0),
     {{struct,Anno,{},TPs},St1};
@@ -220,10 +218,19 @@ pattern({record_field, Anno, F, V0}, St0) ->
 pattern({record_index,Anno,Name,Field}, St) ->
     {index_expr(Anno, Field, Name, record_fields(Name, Anno, St)),St};
 pattern({record,Anno0,Name,Pfs}, St0) ->
+    case is_native_record_defined(Name, St0) of
+        true ->
+            M = case St0#exprec.structype of
+            #{Name := {imported, M0}} -> M0;
+            #{Name := local} -> St0#exprec.module
+        end,
+        pattern({struct,Anno0,{M,Name},Pfs},St0);
+        false ->
     Fs = record_fields(Name, Anno0, St0),
     {TMs,St1} = pattern_list(pattern_fields(Fs, Pfs), St0),
     Anno = mark_record(Anno0, St1),
-    {{tuple,Anno,[{atom,Anno0,Name} | TMs]},St1};
+    {{tuple,Anno,[{atom,Anno0,Name} | TMs]},St1}
+    end;
 pattern({bin,Anno,Es0}, St0) ->
     {Es1,St1} = pattern_bin(Es0, St0),
     {{bin,Anno,Es1},St1};
@@ -439,16 +446,44 @@ expr({record_index,Anno,Name,F}, St) ->
     I = index_expr(Anno, F, Name, record_fields(Name, Anno, St)),
     expr(I, St);
 expr({record,Anno0,Name,Is}, St) ->
+    case is_native_record_defined(Name, St) of
+        true ->
+            M = case St#exprec.structype of
+                #{Name := {imported, M0}} -> M0;
+                #{Name := local} -> St#exprec.module
+            end,
+            expr({struct,Anno0,{M,Name},Is}, St);
+        false ->
     Anno = mark_record(Anno0, St),
     expr({tuple,Anno,[{atom,Anno0,Name} |
                       record_inits(record_fields(Name, Anno0, St), Is)]},
-         St);
-expr({record_field,_A,R,Name,F}, St) ->
+         St)
+    end;
+expr({record_field,A,R,Name,F}, St) ->
+    case is_native_record_defined(Name, St) of
+        true ->
+            M = case St#exprec.structype of
+                #{Name := {imported, M0}} -> M0;
+                #{Name := local} -> St#exprec.module
+            end,
+            {atom,_,FName} = F,
+            expr({struct_field_expr,A,R,{M,Name},FName}, St);
+        false ->
     Anno = erl_parse:first_anno(R),
-    get_record_field(Anno, R, F, Name, St);
+    get_record_field(Anno, R, F, Name, St)
+    end;
 expr({record,Anno,R,Name,Us}, St0) ->
+    case is_native_record_defined(Name, St0) of
+        true ->
+            M = case St0#exprec.structype of
+                #{Name := {imported, M0}} -> M0;
+                #{Name := local} -> St0#exprec.module
+            end,
+            expr({struct_update,Anno,R,{M,Name},Us}, St0);
+        false ->
     {Ue,St1} = record_update(R, Name, record_fields(Name, Anno, St0), Us, St0),
-    expr(Ue, St1);
+    expr(Ue, St1)
+    end;
 expr({struct,Anno,{M,N},Inits},St0) ->
     Struct0 =
         {call,
@@ -458,24 +493,12 @@ expr({struct,Anno,{M,N},Inits},St0) ->
     {Struct1,St1} = expr(Struct0, St0),
     {Ue,St2} = struct_init_update(Struct1, Anno, Inits, St1),
     expr(Ue, St2);
-expr({struct,Anno,N,Inits},St0) when is_atom(N) ->
-    M = case St0#exprec.structype of
-            #{N := {imported, M0}} -> M0;
-            #{N := local} -> St0#exprec.module
-        end,
-    expr({struct,Anno,{M,N},Inits}, St0);
 expr({struct_update,_A,Str,{M,N},Updates}, St0) ->
     Anno = erl_parse:first_anno(Str),
     update_struct_fields(Anno, Str, {M, N}, Updates, St0);
 expr({struct_update,_A,Str,{},Updates}, St0) ->
     Anno = erl_parse:first_anno(Str),
     update_struct_fields(Anno, Str, {}, Updates, St0);
-expr({struct_update,A,Str,N,Updates}, St0) when is_atom(N) ->
-    M = case St0#exprec.structype of
-            #{N := {imported, M0}} -> M0;
-            #{N := local} -> St0#exprec.module
-        end,
-    expr({struct_update,A,Str,{M,N},Updates}, St0);
 expr({record_field,Anno,K,E0}, St0) ->
     {E1,St1} = expr(E0, St0),
     {{record_field,Anno,K,E1}, St1};
@@ -485,12 +508,6 @@ expr({struct_field_expr,_A,Str,{M,N}, F}, St) ->
 expr({struct_field_expr,_A,Str,{}, F}, St) ->
     Anno = erl_parse:first_anno(Str),
     get_struct_field(Anno, Str, F, {}, St);
-expr({struct_field_expr,A,Str,N, F}, St) when is_atom(N) ->
-    M = case St#exprec.structype of
-            #{N := {imported, M0}} -> M0;
-            #{N := local} -> St#exprec.module
-        end,
-    expr({struct_field_expr,A,Str,{M,N},F}, St);
 expr({bin,Anno,Es0}, St0) ->
     {Es1,St1} = expr_bin(Es0, St0),
     {{bin,Anno,Es1},St1};
