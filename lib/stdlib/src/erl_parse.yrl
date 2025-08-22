@@ -883,7 +883,6 @@ processed (see section [Error Information](#module-error-information)).
     af_record_field_type/0,
     af_struct_field/1,
     af_struct_field_access/0,
-    af_struct_field_decl/0,
     af_variable/0,
     af_typed_field/0,
     af_wild_attribute/0,
@@ -957,11 +956,7 @@ processed (see section [Error Information](#module-error-information)).
                   | {'record_field', anno(), af_field_name(), abstract_expr()}.
 
 -type af_struct_decl() ::
-        {'attribute', anno(), 'struct', {StructName :: atom(), [af_struct_field_decl()]}}.
-
--type af_struct_field_decl() ::
-        {'struct_def_field', anno(), FieldName :: af_atom()}
-        | {'struct_def_field', anno(), FieldName :: af_atom(), Value :: abstract_expr()}.
+        {'attribute', anno(), 'struct', {StructName :: atom(), [af_field()]}}.
 
 -type af_type_decl() :: {'attribute', anno(), type_attr(),
                          {type_name(), abstract_type(), [af_variable()]}}.
@@ -1507,10 +1502,6 @@ parse_term(Tokens) ->
 build_typed_attribute({atom,Aa,record},
 		      {typed_record, {atom,_An,RecordName}, RecTuple}) ->
     {attribute,Aa,record,{RecordName,record_tuple(RecTuple)}};
-% TODO - typed fields
-% build_typed_attribute({atom,Aa,struct},
-% 		      {struct, {atom,_An,StructName}, StructTuple}) ->
-%    {attribute,Aa,struct,{StructName,struct_tuple(StructTuple)}};
 build_typed_attribute({atom,Aa,Attr},
                       {type_def, {call,_,{atom,_,TypeName},Args}, Type})
   when Attr =:= 'type' ; Attr =:= 'opaque' ; Attr =:= 'nominal'->
@@ -1650,7 +1641,7 @@ build_attribute({atom,Aa,record}, Val) ->
 build_attribute({atom,Aa,struct}, Val) ->
     case Val of
 	[{atom,_An,Struct},StructTuple] ->
-	    {attribute,Aa,struct,{Struct,struct_tuple(StructTuple)}};
+	    {attribute,Aa,struct,{Struct,record_tuple(StructTuple)}};
         [Other|_] -> error_bad_decl(Other, struct)
     end;
 build_attribute({atom,Aa,file}, Val) ->
@@ -1759,12 +1750,6 @@ record_tuple({tuple,_At,Fields}) ->
 record_tuple(Other) ->
     ret_abstr_err(Other, "bad record declaration").
 
-% struct tuple in struct declaration
-struct_tuple({tuple,_At,Fields}) ->
-    struct_fields(Fields);
-struct_tuple(Other) ->
-    ret_abstr_err(Other, "bad struct declaration").
-
 record_fields([{atom,Aa,A}|Fields]) ->
     [{record_field,Aa,{atom,Aa,A}}|record_fields(Fields)];
 record_fields([{match,_Am,{atom,Aa,A},Expr}|Fields]) ->
@@ -1775,20 +1760,6 @@ record_fields([{typed,Expr,TypeInfo}|Fields]) ->
 record_fields([Other|_Fields]) ->
     ret_abstr_err(Other, "bad record field");
 record_fields([]) -> [].
-
-% struct fields in struct declaration
-struct_fields([{atom,Aa,_}=N|Fields]) ->
-    [{struct_def_field,Aa,N}|struct_fields(Fields)];
-% TODO - not only atoms
-struct_fields([{match,_Am,{atom,Aa,_}=N,{atom,_,_}=V}|Fields]) ->
-    [{struct_def_field,Aa,N,V}|struct_fields(Fields)];
-% TODO - typed field
-%struct_fields([{typed,Expr,TypeInfo}|Fields]) ->
-%    [Field] = struct_fields([Expr]),
-%    [{typed_struct_def_field,Field,TypeInfo}|struct_fields(Fields)];
-struct_fields([Other|_Fields]) ->
-    ret_abstr_err(Other, "bad struct field");
-struct_fields([]) -> [].
 
 term(Expr) ->
     try normalise(Expr)
