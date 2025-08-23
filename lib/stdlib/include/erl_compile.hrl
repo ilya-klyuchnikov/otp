@@ -37,7 +37,7 @@
 						% 2, 3, ... - more warnings).
 	  verbose=false :: boolean(),		% Verbose (true/false).
 	  optimize=999,				% Optimize options.
-	  specific=[] :: [_],			% Compiler specific options.
+	  specific=[] :: [dynamic()],			% Compiler specific options.
 	  outfile=""  :: file:filename(),	% Name of output file (internal
 						% use in erl_compile.erl).
 	  cwd	      :: file:filename()	% Current working directory

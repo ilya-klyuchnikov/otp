@@ -992,6 +992,7 @@ run_sub_passes(Ps, St) ->
 -define(pass(P), {P,fun P/2}).
 -define(pass(P,T), {P,fun T/1,fun P/2}).
 
+-spec env_default_opts() -> [option()].
 env_default_opts() ->
     Key = "ERL_COMPILER_OPTIONS",
     case os:getenv(Key) of
@@ -1013,6 +1014,8 @@ env_default_opts() ->
 	    end
     end.
 
+-spec do_compile(Input, [option()]) -> comp_ret() when
+    Input :: {file, module() | file:filename()} | {forms, forms()}.
 do_compile(Input, Opts0) ->
     Opts = expand_opts(Opts0),
     IntFun = internal_fun(Input, Opts),
@@ -1034,6 +1037,8 @@ do_compile(Input, Opts0) ->
             end
     end.
 
+-spec internal_fun(Input, [option()]) -> fun(() -> comp_ret()) when
+    Input :: {file, module() | file:filename()} | {forms, forms()}.
 internal_fun(Input, Opts) ->
     fun() ->
             try
@@ -1044,6 +1049,7 @@ internal_fun(Input, Opts) ->
             end
     end.
 
+-spec internal_error('error' | 'exit' | 'throw', term(), [dynamic()]) -> error.
 internal_error(Class, Reason, Stk) ->
     Error = ["\n*** Internal compiler error ***\n",
              format_error_reason(Class, Reason, Stk),
@@ -1051,6 +1057,7 @@ internal_error(Class, Reason, Stk) ->
     io:put_chars(Error),
     error.
 
+-spec expand_opts([option()]) -> [option()].
 expand_opts(Opts0) ->
     %% {debug_info_key,Key} implies debug_info.
     Opts = case {proplists:get_value(debug_info_key, Opts0),
@@ -1067,6 +1074,7 @@ expand_opts(Opts0) ->
             end,
     foldr(fun expand_opt/2, [], Opts1).
 
+-spec expand_opt(option(), [option()]) -> [option()].
 expand_opt(basic_validation, Os) ->
     [no_code_generation,to_pp,binary|Os];
 expand_opt(strong_validation, Os) ->
@@ -1145,9 +1153,16 @@ format_error({bad_return,Pass,Reason}) ->
 format_error({module_name,Mod,Filename}) ->
     io_lib:format("Module name '~s' does not match file name '~ts'", [Mod,Filename]).
 
+-spec format_error_reason({Reason, StackTrace}) -> unicode:chardata() when
+      Reason :: term(),
+      StackTrace :: erlang:stacktrace().
 format_error_reason({Reason, Stack}) when is_list(Stack) ->
     format_error_reason(error, Reason, Stack).
 
+-spec format_error_reason(Class, Reason, StackTrace) -> unicode:chardata() when
+      Class :: 'error' | 'exit' | 'throw',
+      Reason :: term(),
+      StackTrace :: erlang:stacktrace().
 format_error_reason(Class, Reason, Stack) ->
     StackFun = fun
 	(escript, run,      2) -> true;
@@ -1175,7 +1190,11 @@ format_error_reason(Class, Reason, Stack) ->
                   errors=[]        :: errors(),
                   warnings=[]      :: warnings(),
                   extra_chunks=[]  :: [{binary(), binary()}]}).
+-type state() :: #compile{}.
+-type todo() :: dynamic().
 
+-spec internal(Input, [option()]) -> comp_ret() when
+    Input :: {file, module() | file:filename()} | {forms, forms()}.
 internal({forms,Forms}, Opts0) ->
     {_,Ps} = passes(forms, Opts0),
     Source = proplists:get_value(source, Opts0, ""),
@@ -1193,6 +1212,7 @@ internal({file,File}, Opts) ->
     Compile = build_compile(Opts),
     internal_comp(Ps, none, File, Ext, Compile).
 
+-spec build_compile([option()]) -> state().
 build_compile(Opts0) ->
     ExtraChunks = proplists:get_value(extra_chunks, Opts0, []),
     Opts1 = proplists:delete(extra_chunks, Opts0),
@@ -1203,7 +1223,9 @@ internal_comp(Passes, Code0, File, Suffix, St0) ->
     Base = filename:basename(File, Suffix),
     % eqwalizer:ignore Base :: filename shit
     St1 = St0#compile{filename=File, dir=Dir, base=Base,
+              % eqwalizer:ignore Base :: filename shit
 		      ifile=erlfile(Dir, Base, Suffix),
+              % eqwalizer:ignore Base :: filename shit
 		      ofile=objfile(Base, St0)},
     Run = runner(St1),
     Folder = case keyfind(time, 1, St1#compile.options) of
@@ -1393,6 +1415,7 @@ comp_ret_ok(Code, #compile{warnings=Warn0,module=Mod,options=Opts}=St) ->
             list_to_tuple([ok,Mod|Ret2])
     end.
 
+-spec comp_ret_err(state()) -> error | {error, [{file:filename(), [error_info()]}], [{file:filename(), [error_info()]}]}.
 comp_ret_err(#compile{warnings=Warn0,errors=Err0,options=Opts}=St) ->
     Warn = messages_per_file(Warn0),
     Err = messages_per_file(Err0),
@@ -1403,12 +1426,15 @@ comp_ret_err(#compile{warnings=Warn0,errors=Err0,options=Opts}=St) ->
 	false -> error
     end.
 
+-spec not_werror(state()) -> boolean().
 not_werror(St) -> not werror(St).
 
+-spec werror(state()) -> boolean().
 werror(#compile{options=Opts,warnings=Ws}) ->
     Ws =/= [] andalso member(warnings_as_errors, Opts).
 
 %% messages_per_file([{File,[Message]}]) -> [{File,[Message]}]
+-spec messages_per_file([{file:filename(), [error_info()]}]) -> [{file:filename(), [error_info()]}].
 messages_per_file(Ms) ->
     T = lists:sort([{File,M} || {File,Messages} <:- Ms, M <- Messages]),
     PrioMs = [erl_scan, epp, erl_parse],
@@ -1422,6 +1448,7 @@ messages_per_file(Ms) ->
                       lists:append(Prio0)),
     flatmap(fun mpf/1, [Prio, Rest]).
 
+-spec mpf([{file:filename(), compile:error_info()}]) -> [{file:filename(), [error_info()]}].
 mpf(Ms) ->
     [{File,[M || {F,M} <- Ms, F =:= File]} ||
 	File <- lists:usort([F || {F,_} <:- Ms])].
@@ -1430,6 +1457,7 @@ mpf(Ms) ->
 %%  Figure out the extension of the input file and which passes
 %%  that need to be run.
 
+-spec passes(forms|file, [option()]) -> {todo(), todo()}.
 passes(Type, Opts) ->
     {Ext,Passes0} = passes_1(Opts),
 
@@ -1883,6 +1911,7 @@ parse_module(_Code, St) ->
 	    Ret
     end.
 
+-spec deterministic_filename(state()) -> string().
 deterministic_filename(#compile{ifile=File,options=Opts}) ->
     SourceName0 = proplists:get_value(source, Opts, File),
     case member(deterministic, Opts) of
@@ -1988,6 +2017,7 @@ with_columns(Opts) ->
         line -> false
     end.
 
+-spec consult_abstr(_, state()) -> {ok, [erl_parse:abstract_form()], state()} | {error, state()}.
 consult_abstr(_Code, St) ->
     case file:consult(St#compile.ifile) of
 	{ok,Forms} ->
@@ -1998,6 +2028,7 @@ consult_abstr(_Code, St) ->
 	    {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
 
+-spec parse_core(term(), state()) -> {ok, cerl:c_module(), state()} | {error, state()}.
 parse_core(_Code, St) ->
     case file:read_file(St#compile.ifile) of
 	{ok,Bin} ->
@@ -2020,6 +2051,7 @@ parse_core(_Code, St) ->
 	    {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
 
+-spec get_module_name_from_core(cerl:c_module(), state()) -> {ok, cerl:c_module(), state()}.
 get_module_name_from_core(Core, St) ->
     try
         Mod = cerl:concrete(cerl:module_name(Core)),
@@ -2331,6 +2363,7 @@ makedep_output(Code, #compile{options=Opts,ofile=Ofile}=St) ->
     Output = case proplists:get_value(makedep_output, Opts) of
                  undefined ->
                      %% Prepare the default filename.
+                     % eqwalizer:ignore filename shit
                      outfile(filename:basename(Ofile, ".beam"), "Pbeam", Opts);
                  Other ->
                      Other
@@ -2560,6 +2593,7 @@ encrypt_debug_info(DebugInfo, Key, Opts) ->
 	    {error,[{none,?MODULE,bad_crypto_key}]}
     end.
 
+-spec cleanup_compile_options([option()]) -> [option()].
 cleanup_compile_options(Opts) ->
     IsDeterministic = lists:member(deterministic, Opts),
     lists:filter(fun(Opt) ->
@@ -2568,6 +2602,7 @@ cleanup_compile_options(Opts) ->
 
 %% Include paths and current directory don't affect compilation, but they might
 %% be helpful so we include them unless we're doing a deterministic build.
+-spec keep_compile_option(option(), boolean()) -> boolean().
 keep_compile_option({i, _}, Deterministic) ->
     not Deterministic;
 keep_compile_option({cwd, _}, Deterministic) ->
@@ -2662,11 +2697,13 @@ compile_info(File, CompilerOpts, Opts) ->
 	end,
     Info2.
 
+-spec paranoid_absname(string()) -> string().
 paranoid_absname(""=File) ->
     File;
 paranoid_absname(File) ->
     case file:get_cwd() of
 	{ok,Cwd} ->
+        % eqwalizer:ignore filename shit
 	    filename:absname(File, Cwd);
 	_ ->
 	    File
@@ -2677,6 +2714,7 @@ paranoid_absname(File) ->
 %%  generated code in the BEAM file (as opposed to how
 %%  errors will be reported).
 
+-spec effects_code_generation(option()) -> boolean().
 effects_code_generation(Option) ->
     case Option of
 	beam -> false;
@@ -2692,6 +2730,7 @@ effects_code_generation(Option) ->
 	_ -> true
     end.
 
+-spec save_binary(binary(), state()) -> {ok, none, state()} | {error, state()}.
 save_binary(Code, #compile{module=Mod,ofile=Outfile,options=Opts}=St) ->
     %% Test that the module name and output file name match.
     case member(no_error_module_mismatch, Opts) of
@@ -2699,6 +2738,7 @@ save_binary(Code, #compile{module=Mod,ofile=Outfile,options=Opts}=St) ->
 	    save_binary_1(Code, St);
 	false ->
 	    Base = filename:rootname(filename:basename(Outfile)),
+        % eqwalizer:ignore - we assume that at this stage Mod is not []
 	    case atom_to_list(Mod) of
 		Base ->
 		    save_binary_1(Code, St);
@@ -2709,6 +2749,7 @@ save_binary(Code, #compile{module=Mod,ofile=Outfile,options=Opts}=St) ->
 	    end
     end.
 
+-spec save_binary_1(binary(), state()) -> {ok, none, state()} | {error, state()}.
 save_binary_1(Code, St) ->
     Ofile = St#compile.ofile,
     Tfile = tmpfile(Ofile),		%Temp working file
@@ -2728,6 +2769,7 @@ save_binary_1(Code, St) ->
 	    {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
 
+-spec write_binary(Name :: string(), Bin :: binary(), St :: state()) -> ok | {error, term()}.
 write_binary(Name, Bin, St) ->
     Opts = case member(compressed, St#compile.options) of
 	       true -> [compressed];
@@ -2741,6 +2783,7 @@ write_binary(Name, Bin, St) ->
 %% report_errors(State) -> ok
 %% report_warnings(State) -> ok
 
+-spec report_errors(state()) -> ok.
 report_errors(#compile{options=Opts,errors=Errors}) ->
     case member(report_errors, Opts) of
 	true ->
@@ -2771,15 +2814,18 @@ report_warnings(#compile{options=Opts,warnings=Ws0}) ->
 %%% Filter warnings.
 %%%
 
+-spec filter_warnings(warnings(), [option()]) -> warnings().
 filter_warnings(Ws, Opts) ->
     Ignore = ignore_tags(Opts, sets:new([{version,2}])),
     filter_warnings_1(Ws, Ignore).
 
+-spec filter_warnings_1(warnings(), sets:set(atom())) -> warnings().
 filter_warnings_1([{Source,Ws0}|T], Ignore) ->
     Ws = [W || W <- Ws0, not ignore_warning(W, Ignore)],
     [{Source,Ws}|filter_warnings_1(T, Ignore)];
 filter_warnings_1([], _Ignore) -> [].
 
+-spec ignore_warning(error_info(), sets:set(atom())) -> boolean().
 ignore_warning({_Location,Pass,{Category,_}}, Ignore) ->
     IgnoreMod = case Pass of
                     v3_core -> true;
@@ -2790,6 +2836,7 @@ ignore_warning({_Location,Pass,{Category,_}}, Ignore) ->
     IgnoreMod andalso sets:is_element(Category, Ignore);
 ignore_warning(_, _) -> false.
 
+-spec ignore_tags([option()], sets:set(atom())) -> sets:set(atom()).
 ignore_tags([nowarn_opportunistic|_], _Ignore) ->
     sets:from_list([failed,ignored,nomatch], [{version,2}]);
 ignore_tags([nowarn_failed|Opts], Ignore) ->
@@ -2808,11 +2855,13 @@ ignore_tags([], Ignore) -> Ignore.
 %% tmpfile(ObjFile) -> TmpFile
 %%  Work out the correct input and output file names.
 
+-spec erlfile(string(), string(), string()) -> string().
 erlfile(".", Base, Suffix) ->
     Base ++ Suffix;
 erlfile(Dir, Base, Suffix) ->
     filename:join(Dir, Base ++ Suffix).
 
+-spec outfile(string(), string(), [option()]) -> string().
 outfile(Base, Ext, Opts) when is_list(Ext) ->
     Obase = case keyfind(outdir, 1, Opts) of
 		{outdir, Odir} -> filename:join(Odir, Base);
@@ -2820,9 +2869,11 @@ outfile(Base, Ext, Opts) when is_list(Ext) ->
 	    end,
     Obase ++ "." ++ Ext.
 
+-spec objfile(string(), state()) -> string().
 objfile(Base, St) ->
     outfile(Base, "beam", St#compile.options).
 
+-spec tmpfile(string()) -> string().
 tmpfile(Ofile) ->
     reverse([$#|tl(reverse(Ofile))]).
 
@@ -2830,6 +2881,7 @@ tmpfile(Ofile) ->
 %% inc_paths(Options)
 %%  Extract the predefined macros and include paths from the option list.
 
+-spec pre_defs([option()]) -> [option()].
 pre_defs([{d,M,V}|Opts]) ->
     [{M,V}|pre_defs(Opts)];
 pre_defs([{d,M}|Opts]) ->
@@ -2957,6 +3009,7 @@ diffable_label_map([], _New, Map, Acc) ->
 options() ->
     help(standard_passes()).
 
+-spec help(term()) -> ok.
 help([{delay,Ps}|T]) ->
     help(Ps),
     help(T);
@@ -2988,6 +3041,7 @@ help([_|T]) ->
 help(_) ->
     ok.
 
+-spec rel2fam(todo()) -> todo().
 rel2fam(S0) ->
     S1 = sofs:relation(S0),
     S = sofs:rel2fam(S1),
@@ -3037,6 +3091,7 @@ compile_abstr(File0, _OutFile, Opts) ->
 	Other -> Other
     end.
 
+-spec shorten_filename(string()) -> string().
 shorten_filename(Name0) ->
     {ok,Cwd} = file:get_cwd(),
     case lists:prefix(Cwd, Name0) of
@@ -3050,6 +3105,7 @@ shorten_filename(Name0) ->
 
 %% Converts generic compiler options to specific options.
 
+-spec make_erl_options(#options{}) -> [option()].
 make_erl_options(Opts) ->
     #options{includes=Includes,
 	     defines=Defines,
@@ -3068,6 +3124,7 @@ make_erl_options(Opts) ->
     Options ++ [report_errors, {cwd, Cwd}, {outdir, Outdir} |
                 [{i, Dir} || Dir <- Includes]] ++ Specific.
 
+-spec pre_load() -> ok.
 pre_load() ->
     L = [beam_a,
 	 beam_asm,
