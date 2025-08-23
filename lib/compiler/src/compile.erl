@@ -2991,7 +2991,7 @@ rel2fam(S0) ->
 %%   Compile entry point for erl_compile.
 
 -doc false.
--spec compile(file:filename(), _, #options{}) -> 'ok' | 'error'.
+-spec compile(file:filename(), _, #options{}) -> 'ok' | comp_ret().
 
 compile(File0, _OutFile, Options) ->
     pre_load(),
@@ -3002,7 +3002,7 @@ compile(File0, _OutFile, Options) ->
     end.
 
 -doc false.
--spec compile_asm(file:filename(), _, #options{}) -> 'ok' | 'error'.
+-spec compile_asm(file:filename(), _, #options{}) -> 'ok' | comp_ret().
 
 compile_asm(File0, _OutFile, Opts) ->
     File = shorten_filename(File0),
@@ -3012,7 +3012,7 @@ compile_asm(File0, _OutFile, Opts) ->
     end.
 
 -doc false.
--spec compile_core(file:filename(), _, #options{}) -> 'ok' | 'error'.
+-spec compile_core(file:filename(), _, #options{}) -> 'ok' | comp_ret().
 
 compile_core(File0, _OutFile, Opts) ->
     File = shorten_filename(File0),
@@ -3022,7 +3022,7 @@ compile_core(File0, _OutFile, Opts) ->
     end.
 
 -doc false.
--spec compile_abstr(file:filename(), _, #options{}) -> 'ok' | 'error'.
+-spec compile_abstr(file:filename(), _, #options{}) -> 'ok' | comp_ret().
 
 compile_abstr(File0, _OutFile, Opts) ->
     File = shorten_filename(File0),
