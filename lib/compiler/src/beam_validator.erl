@@ -49,7 +49,7 @@
 -spec validate(Code, Level) -> Result when
       Code :: beam_utils:module_code(),
       Level :: strong | weak,
-      Result :: ok | {error, [{atom(), list()}]}.
+      Result :: ok | {error, [{string(), list()}]}.
 
 validate({Mod,Exp,Attr,Fs,Lc}, Level) when is_atom(Mod),
                                            is_list(Exp),
