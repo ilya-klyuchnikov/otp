@@ -23,7 +23,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % The parser generator will insert appropriate declarations before this line.%
 
--type yecc_ret() :: {'error', _} | {'ok', _}.
+-type yecc_ret() :: {'error', dynamic()} | {'ok', dynamic()}.
 
 -ifdef (YECC_PARSE_DOC).
 -doc ?YECC_PARSE_DOC.
