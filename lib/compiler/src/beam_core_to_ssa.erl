@@ -180,7 +180,7 @@ get_anno(#cg_alt{anno=Anno}) -> Anno;
 get_anno(#cg_guard{anno=Anno}) -> Anno;
 get_anno(#cg_select{anno=Anno}) -> Anno.
 
--type warning() :: {'failed' | 'nomatch' | string(), term()}.
+-type warning() :: {string(), term()}.
 
 %% State record for the first two passes (formerly `v3_kernel`).
 -record(kern, {module :: atom(),       %Current module
@@ -214,7 +214,7 @@ module(#c_module{name=#c_literal{val=Mod},exports=Es,attrs=As,defs=Fs}, Options)
     Code = #b_module{name=Mod,exports=Kes,attributes=Kas,body=Body},
     {ok,Code,sort(St#kern.ws)}.
 
--spec format_error(warning()) -> string() | binary().
+-spec format_error(Error) -> string() | binary() when Error :: {nomatch,shadow | {shadow,integer()}} | {failed, bad_call | bad_segment_size}.
 
 format_error({nomatch,{shadow,Line}}) ->
     S = ~"this clause cannot match because a previous clause at line ~p matches the same pattern as this clause",
