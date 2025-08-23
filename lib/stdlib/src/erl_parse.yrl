@@ -1456,7 +1456,7 @@ Returns one of the following:
 """.
 -spec parse_term(Tokens) -> {ok, Term} | {error, ErrorInfo} when
       Tokens :: [token()],
-      Term :: term(),
+      Term :: dynamic(),
       ErrorInfo :: error_info().
 parse_term(Tokens) ->
     ?ANNO_CHECK(Tokens),
