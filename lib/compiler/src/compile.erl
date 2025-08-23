@@ -1201,6 +1201,7 @@ build_compile(Opts0) ->
 internal_comp(Passes, Code0, File, Suffix, St0) ->
     Dir = filename:dirname(File),
     Base = filename:basename(File, Suffix),
+    % eqwalizer:ignore Base :: filename shit
     St1 = St0#compile{filename=File, dir=Dir, base=Base,
 		      ifile=erlfile(Dir, Base, Suffix),
 		      ofile=objfile(Base, St0)},
@@ -2374,6 +2375,7 @@ compile_directives(Forms, St) ->
     compile_directives_1(Opts, Forms, St).
 
 core_compile_directives(Core, St) ->
+    % eqwalizer:ignore - cerl
     Attrs = [{cerl:concrete(Name),cerl:concrete(Value)} ||
                 {Name,Value} <:- cerl:module_attrs(Core)],
     Opts = [C || {compile,C} <- Attrs],
@@ -2470,6 +2472,7 @@ core_inline_module(Code0, #compile{options=Opts}=St) ->
     {ok,Code,St}.
 
 save_abstract_code(Code, St) ->
+    % eqwalizer:ignore anno_to_term - bad spec
     {ok,Code,St#compile{abstract_code=erl_parse:anno_to_term(Code)}}.
 
 -define(META_DOC_CHUNK, <<"Docs">>).
@@ -2844,7 +2847,9 @@ src_listing(Ext, Code, St) ->
 	    Ext, Code, St).
 
 do_src_listing(Lf, Fs) ->
+    % eqwalizer:ignore - code assumes that io:getopts doesn't return {error, ...}
     Opts = [lists:keyfind(encoding, 1, io:getopts(Lf))],
+    % eqwalizer:ignore - get_opts always returns encoding, but it's not expressed in specs
     foreach(fun (F) -> io:put_chars(Lf, [erl_pp:form(F, Opts),"\n"]) end,
 	    Fs).
 
@@ -2859,6 +2864,7 @@ listing(Ext, Code0, St0) ->
                %% First check whether the `beam_debug_info` option is
                %% already present.
                Attrs0 = cerl:module_attrs(Code0),
+               % eqwalizer:ignore cerl - attributes - are literal, should be fixed in cerl
                Opts0 = [{cerl:concrete(Name),cerl:concrete(Value)} ||
                            {Name,Value} <:- Attrs0],
                Opts = [Opt || {compile,Opts} <- Opts0,
