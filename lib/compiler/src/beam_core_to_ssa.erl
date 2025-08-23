@@ -180,7 +180,7 @@ get_anno(#cg_alt{anno=Anno}) -> Anno;
 get_anno(#cg_guard{anno=Anno}) -> Anno;
 get_anno(#cg_select{anno=Anno}) -> Anno.
 
--type warning() :: {string(), term()}.
+-type warning() :: {string(), [dynamic()]}.
 
 %% State record for the first two passes (formerly `v3_kernel`).
 -record(kern, {module :: atom(),       %Current module
