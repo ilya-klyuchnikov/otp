@@ -26,8 +26,6 @@
 
 -import_struct(a, [a, b, c]).
 
--include_lib("stdlib/include/assert.hrl").
-
 -export([all/0, suite/0, groups/0]).
 
 -export([init_per_group/2, end_per_group/2]).
@@ -68,11 +66,11 @@ name(#a{}) -> a;
 name(#b{}) -> b.
 
 t_1(_Config) ->
-  ?assertEqual(a, name(#a{})),
-  ?assertEqual(b, name(#b{})),
+  a = name(#a{}),
+  b = name(#b{}),
   NameFun = fun (#a{}) -> a; (#b{}) -> b end,
-  ?assertEqual(a, NameFun(#a{})),
-  ?assertEqual(b, NameFun(#b{})).
+  a = NameFun(#a{}),
+  b = NameFun(#b{}).
 
 %%%%%%%%%%%%%
 
@@ -81,8 +79,8 @@ get_a1(#a{a1 = A1}) -> A1.
 t_2(_Config) ->
   Str1 = #a{},
   Str2 = #a{a1 = non_default},
-  ?assertEqual(a1_default, get_a1(Str1)),
-  ?assertEqual(non_default, get_a1(Str2)).
+  a1_default = get_a1(Str1),
+  non_default = get_a1(Str2).
 
 % struct creation with bad field
 t_3(_Config) ->
